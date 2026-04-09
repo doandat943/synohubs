@@ -10,6 +10,7 @@ export default function Footer() {
         <div className="footer-brand">SynoHub</div>
         <p className="footer-tagline">{t.footer.tagline}</p>
         <div className="footer-links">
+          <a href="https://github.com/duconmang/synohubs" target="_blank" rel="noopener noreferrer">GitHub (Open Source)</a>
           <a href="/privacy.html">{t.footer.links.privacy}</a>
           <a href="/terms.html">{t.footer.links.terms}</a>
           <a href="mailto:support@synohubs.com">{t.footer.links.contact}</a>

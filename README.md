@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://synohubs.com">Website</a> •
   <a href="https://synohubs.com/#download">Download</a> •
-  <a href="LICENSE">License</a>
+  <a href="https://github.com/duconmang/synohubs/blob/main/LICENSE">License</a>
 </p>
 
 ## Overview
@@ -53,8 +53,8 @@ We prioritize your privacy:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/synohub.git
-   cd synohub
+   git clone https://github.com/duconmang/synohubs.git
+   cd synohubs
    ```
 
 2. Get Flutter dependencies:

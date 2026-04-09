@@ -1,4 +1,4 @@
-import { Download, ArrowRight, Shield, Globe, Lock, Zap } from 'lucide-react';
+import { Download, ArrowRight, Shield, Globe, Lock, Zap, Github } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 
 export default function Hero() {
@@ -21,11 +21,14 @@ export default function Hero() {
           <span className="gradient">{t.hero.title2}</span>
         </h1>
         <p className="hero-subtitle">{t.hero.subtitle}</p>
-        <div className="hero-actions">
-          <a href="#download" className="btn btn-primary">
+        <div className="hero-actions" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <a href="#download" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Download size={18} /> {t.hero.downloadBtn}
           </a>
-          <a href="#features" className="btn btn-outline">
+          <a href="https://github.com/duconmang/synohubs" target="_blank" rel="noopener noreferrer" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Github size={18} /> Open Source
+          </a>
+          <a href="#features" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {t.hero.learnMore} <ArrowRight size={18} />
           </a>
         </div>

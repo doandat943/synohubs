@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X, Globe, ChevronDown } from 'lucide-react';
+import { Menu, X, Globe, ChevronDown, Github } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 
 export default function Navbar() {
@@ -48,7 +48,10 @@ export default function Navbar() {
           ))}
         </ul>
 
-        <div className="nav-right">
+        <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <a href="https://github.com/duconmang/synohubs" target="_blank" rel="noopener noreferrer" className="github-link" style={{ color: 'var(--text)', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
+            <Github size={20} />
+          </a>
           <div className={`lang-dropdown ${langOpen ? 'open' : ''}`} ref={dropdownRef}>
             <button className="lang-btn" onClick={() => setLangOpen(!langOpen)}>
               <Globe size={16} />
