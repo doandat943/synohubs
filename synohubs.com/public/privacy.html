@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — SynoHub</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      background: #0a0e1a; color: #f1f5f9;
+      line-height: 1.8; padding: 0;
+    }
+    .top-bar {
+      background: rgba(10,14,26,.95); border-bottom: 1px solid rgba(148,163,184,.12);
+      padding: 16px 24px; position: sticky; top: 0; z-index: 10;
+      backdrop-filter: blur(20px);
+    }
+    .top-bar a {
+      color: #22d3ee; text-decoration: none; font-weight: 600; font-size: .95rem;
+    }
+    .top-bar a:hover { text-decoration: underline; }
+    .container {
+      max-width: 800px; margin: 0 auto; padding: 48px 24px 80px;
+    }
+    h1 {
+      font-size: 2.5rem; font-weight: 800; margin-bottom: 8px;
+      background: linear-gradient(135deg, #22d3ee, #a78bfa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .updated { font-size: .9rem; color: #64748b; margin-bottom: 48px; }
+    h2 {
+      font-size: 1.4rem; font-weight: 700; color: #22d3ee;
+      margin: 40px 0 16px; border-bottom: 1px solid rgba(148,163,184,.12); padding-bottom: 8px;
+    }
+    p, li { font-size: 1rem; color: #94a3b8; margin-bottom: 12px; }
+    ul { padding-left: 24px; margin-bottom: 16px; }
+    li { margin-bottom: 8px; }
+    strong { color: #f1f5f9; }
+    a { color: #22d3ee; }
+  </style>
+</head>
+<body>
+  <div class="top-bar"><a href="/">&larr; Back to SynoHub</a></div>
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: April 9, 2026</p>
+
+    <h2>1. Overview</h2>
+    <p>SynoHub ("the App") is a mobile application that lets you manage your Synology NAS devices. We are committed to protecting your privacy. This policy describes what data we collect, how it's used, and your rights.</p>
+
+    <h2>2. Data We Do NOT Collect</h2>
+    <p>SynoHub is built with a <strong>privacy-first architecture</strong>. We do NOT:</p>
+    <ul>
+      <li>Collect or store your NAS credentials on our servers</li>
+      <li>Use analytics, tracking, or telemetry</li>
+      <li>Transmit your files, photos, or media through our servers</li>
+      <li>Access your NAS on your behalf</li>
+      <li>Sell or share any user data with third parties</li>
+    </ul>
+
+    <h2>3. Data Stored Locally on Your Device</h2>
+    <p>The following data is stored <strong>only on your device</strong> using encrypted storage (AES-256):</p>
+    <ul>
+      <li>NAS connection profiles (host, port, username, password)</li>
+      <li>App preferences and settings</li>
+      <li>Session tokens for active NAS connections</li>
+    </ul>
+    <p>This data never leaves your device unless you explicitly choose to back it up.</p>
+
+    <h2>4. Google Drive Backup (Optional)</h2>
+    <p>If you opt to use Google Drive Backup:</p>
+    <ul>
+      <li>Your NAS profiles are <strong>AES-256 encrypted</strong> before uploading</li>
+      <li>Data is stored in your personal Google Drive <strong>appDataFolder</strong> — a hidden, app-specific folder</li>
+      <li>Only the SynoHub app on your device can decrypt and read this data</li>
+      <li>We do NOT have access to your Google Drive</li>
+    </ul>
+
+    <h2>5. Google Authentication</h2>
+    <p>SynoHub uses Google Sign-In for the following purposes only:</p>
+    <ul>
+      <li><strong>Identity verification</strong> — to identify your account for VIP membership</li>
+      <li><strong>Drive app data scope</strong> — to read/write encrypted backups to your own Google Drive</li>
+    </ul>
+    <p>We request minimal OAuth scopes: <code>email</code> and <code>drive.appdata</code>. We do NOT access your Google Drive files, contacts, or any other personal data.</p>
+
+    <h2>6. NAS Connection</h2>
+    <p>SynoHub connects <strong>directly</strong> to your Synology NAS via:</p>
+    <ul>
+      <li>Local Area Network (LAN)</li>
+      <li>Your own domain name or DDNS</li>
+      <li>QuickConnect (Synology's own relay service)</li>
+    </ul>
+    <p>No traffic is routed through SynoHub servers. We do not operate relay servers or proxy services.</p>
+
+    <h2>7. VIP Membership</h2>
+    <p>When you purchase VIP membership:</p>
+    <ul>
+      <li>Your <strong>email address</strong> is stored in Firebase Firestore to verify VIP status</li>
+      <li>No payment information is stored by SynoHub — payments are processed by Google Play or the payment provider</li>
+    </ul>
+
+    <h2>8. Third-Party Services</h2>
+    <ul>
+      <li><strong>TMDB (The Movie Database)</strong> — used for media metadata and poster images. No user data is sent to TMDB.</li>
+      <li><strong>Firebase</strong> — used only for VIP membership verification via Firestore.</li>
+      <li><strong>Google Sign-In</strong> — for authentication (email + Drive app data scope only).</li>
+    </ul>
+
+    <h2>9. Children's Privacy</h2>
+    <p>SynoHub is not directed at children under 13. We do not knowingly collect data from children.</p>
+
+    <h2>10. Changes to This Policy</h2>
+    <p>We may update this privacy policy from time to time. Changes will be posted on this page with an updated date.</p>
+
+    <h2>11. Contact</h2>
+    <p>If you have questions about this privacy policy, please contact us at:</p>
+    <p><strong>Email:</strong> <a href="mailto:support@synohubs.com">support@synohubs.com</a></p>
+  </div>
+</body>
+</html>
