@@ -1,10 +1,12 @@
-import { Check, Crown, Sparkles, Mail } from 'lucide-react';
+import { useState } from 'react';
+import { Check, Crown, Sparkles, Mail, X } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 
 export default function Premium() {
   const { t } = useI18n();
   const { free, vip } = t.premium;
   const donate = t.premium.donate || {};
+  const [showModal, setShowModal] = useState(false);
 
   return (
     <section id="premium" className="section">
@@ -50,44 +52,60 @@ export default function Premium() {
                 </li>
               ))}
             </ul>
-            <a href="#download" className="btn btn-gold">{vip.cta}</a>
-          </div>
-        </div>
-
-        {/* PayPal Donate / Upgrade Section */}
-        <div className="donate-section">
-          <div className="donate-qr-box">
-            <img src="/assets/paypal-qr.jpg" alt="PayPal QR" className="donate-qr-img" />
-            <p className="donate-qr-label">{donate.scanLabel || 'Scan to pay via PayPal'}</p>
-          </div>
-          <div className="donate-info">
-            <h3 className="donate-title">{donate.title || 'How to Upgrade to VIP'}</h3>
-            <div className="donate-steps">
-              <div className="donate-step">
-                <span className="donate-step-num">1</span>
-                <p>{donate.step1 || 'Scan the QR code or send $4.99 via PayPal.'}</p>
-              </div>
-              <div className="donate-step">
-                <span className="donate-step-num">2</span>
-                <p>{donate.step2 || 'Send an email to confirm your payment.'}</p>
-              </div>
-              <div className="donate-step">
-                <span className="donate-step-num">3</span>
-                <p>{donate.step3 || 'We will activate your VIP within 24 hours.'}</p>
-              </div>
-            </div>
-            <a
-              href="mailto:duconmang43@gmail.com?subject=SynoHub VIP Activation&body=PayPal username: @"
-              className="btn btn-gold donate-email-btn"
-            >
-              <Mail size={16} /> {donate.emailBtn || 'Send Confirmation Email'}
-            </a>
-            <p className="donate-email-hint">
-              {donate.emailHint || 'Include your PayPal @username so we can verify your payment.'}
-            </p>
+            <button className="btn btn-gold" onClick={() => setShowModal(true)}>{vip.cta}</button>
           </div>
         </div>
       </div>
+
+      {/* VIP Upgrade Modal */}
+      {showModal && (
+        <div className="vip-modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="vip-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="vip-modal-close" onClick={() => setShowModal(false)}>
+              <X size={20} />
+            </button>
+
+            <div className="vip-modal-header">
+              <Crown size={24} className="vip-modal-icon" />
+              <h3>{donate.title || 'How to Upgrade to VIP'}</h3>
+            </div>
+
+            <div className="vip-modal-body">
+              <div className="vip-modal-qr">
+                <img src="/assets/paypal-qr.jpg" alt="PayPal QR" />
+                <p className="vip-modal-qr-label">{donate.scanLabel || 'Scan to pay via PayPal'}</p>
+              </div>
+
+              <div className="vip-modal-steps">
+                <div className="donate-step">
+                  <span className="donate-step-num">1</span>
+                  <p>{donate.step1 || 'Scan the QR code or send $4.99 via PayPal.'}</p>
+                </div>
+                <div className="donate-step">
+                  <span className="donate-step-num">2</span>
+                  <p>{donate.step2 || 'Send an email to confirm your payment.'}</p>
+                </div>
+                <div className="donate-step">
+                  <span className="donate-step-num">3</span>
+                  <p>{donate.step3 || 'We will activate your VIP within 24 hours.'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="vip-modal-footer">
+              <a
+                href="mailto:duconmang43@gmail.com?subject=SynoHub VIP Activation&body=PayPal username: @"
+                className="btn btn-gold donate-email-btn"
+              >
+                <Mail size={16} /> {donate.emailBtn || 'Send Confirmation Email'}
+              </a>
+              <p className="donate-email-hint">
+                {donate.emailHint || 'Include your PayPal @username so we can verify your payment.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
