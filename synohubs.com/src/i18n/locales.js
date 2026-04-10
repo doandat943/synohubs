@@ -3,6 +3,7 @@ export const locales = {
     code: 'en',
     name: 'English',
     flag: '🇺🇸',
+    liveVisitors: { text: 'people reading with you' },
     nav: {
       features: 'Features',
       premium: 'Premium',
@@ -234,6 +235,7 @@ export const locales = {
     code: 'vi',
     name: 'Tiếng Việt',
     flag: '🇻🇳',
+    liveVisitors: { text: 'người đang đọc cùng bạn' },
     nav: {
       features: 'Tính năng',
       premium: 'Premium',
@@ -465,6 +467,7 @@ export const locales = {
     code: 'zh',
     name: '中文',
     flag: '🇨🇳',
+    liveVisitors: { text: '人正在和您一起阅读' },
     nav: {
       features: '功能',
       premium: '高级版',
@@ -613,6 +616,7 @@ export const locales = {
     code: 'ja',
     name: '日本語',
     flag: '🇯🇵',
+    liveVisitors: { text: '人と同じページを見ています' },
     nav: {
       features: '機能',
       premium: 'プレミアム',
@@ -768,6 +772,7 @@ export const locales = {
     code: 'fr',
     name: 'Français',
     flag: '🇫🇷',
+    liveVisitors: { text: 'personnes lisent avec vous' },
     nav: {
       features: 'Fonctionnalités',
       premium: 'Premium',
@@ -916,6 +921,7 @@ export const locales = {
     code: 'pt',
     name: 'Português',
     flag: '🇧🇷',
+    liveVisitors: { text: 'pessoas lendo com você' },
     nav: {
       features: 'Recursos',
       premium: 'Premium',

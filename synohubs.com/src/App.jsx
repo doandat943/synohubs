@@ -10,6 +10,7 @@ import Testimonials from './components/Testimonials';
 import Security from './components/Security';
 import Download from './components/Download';
 import Footer from './components/Footer';
+import LiveVisitors from './components/LiveVisitors';
 import './App.css';
 
 export default function App() {
@@ -29,6 +30,7 @@ export default function App() {
           <Download />
         </main>
         <Footer />
+        <LiveVisitors />
       </div>
     </I18nProvider>
   );
