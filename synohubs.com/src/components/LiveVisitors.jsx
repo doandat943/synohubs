@@ -3,45 +3,37 @@ import { useI18n } from '../i18n/I18nProvider';
 
 export default function LiveVisitors() {
   const { t } = useI18n();
-  // Random initial viewers between 5 and 20
-  const [activeVisitors, setActiveVisitors] = useState(() => Math.floor(Math.random() * 15) + 5);
-  // Total visitors starting at a realistic static number and increasing
-  const [totalVisitors, setTotalVisitors] = useState(() => 14258 + Math.floor(Math.random() * 100));
+  const lv = t.liveVisitors || {};
+
+  // Active visitors: random 3-12, fluctuates every 4-8s
+  const [active, setActive] = useState(() => Math.floor(Math.random() * 10) + 3);
+  // Total visitors: starts from a base, slowly increments
+  const [total, setTotal] = useState(() => 1247 + Math.floor(Math.random() * 80));
 
   useEffect(() => {
-    // Randomly change the count every 4 seconds
-    const interval = setInterval(() => {
-      setActiveVisitors(prev => {
-        const change = Math.floor(Math.random() * 5) - 2; // -2, -1, 0, 1, 2
-        let next = prev + change;
-        if (next < 2) next = 2; // Keep at least 2 people
-        if (next > 45) next = 45; // Cap at 45 so it looks realistic
-        return next;
+    const activeTimer = setInterval(() => {
+      setActive(prev => {
+        const delta = Math.floor(Math.random() * 3) - 1;
+        return Math.max(2, Math.min(25, prev + delta));
       });
-      
-      // Occasionally increment total visitors
-      if (Math.random() > 0.4) {
-        setTotalVisitors(prev => prev + Math.floor(Math.random() * 3) + 1);
-      }
-    }, 4000);
+    }, Math.random() * 4000 + 4000);
 
-    return () => clearInterval(interval);
+    const totalTimer = setInterval(() => {
+      setTotal(prev => prev + Math.floor(Math.random() * 3));
+    }, Math.random() * 8000 + 12000);
+
+    return () => { clearInterval(activeTimer); clearInterval(totalTimer); };
   }, []);
 
   return (
-    <div className="live-stats-floating fade-in-up">
-      <div className="stat-item">
-        <span className="pulse-dot"></span>
-        <span className="stat-text">
-          <strong>{activeVisitors}</strong> {t.liveVisitors?.active || 'online'}
-        </span>
+    <div className="live-visitors-float">
+      <div className="lv-row">
+        <span className="lv-dot lv-dot-active"></span>
+        <span className="lv-label">{active} {lv.active || 'online now'}</span>
       </div>
-      <div className="stat-divider"></div>
-      <div className="stat-item">
-        <span className="static-dot"></span>
-        <span className="stat-text">
-          <strong>{totalVisitors.toLocaleString()}</strong> {t.liveVisitors?.total || 'total visits'}
-        </span>
+      <div className="lv-row">
+        <span className="lv-dot lv-dot-total"></span>
+        <span className="lv-label">{total.toLocaleString()} {lv.total || 'total visits'}</span>
       </div>
     </div>
   );
