@@ -14,6 +14,7 @@ import '../services/google_drive_backup.dart';
 import '../services/session_manager.dart';
 import '../services/locale_provider.dart';
 import '../services/user_tier_provider.dart';
+import '../services/app_updater.dart';
 import '../utils/nas_models.dart';
 import 'login_screen.dart';
 
@@ -42,6 +43,10 @@ class _NasManagerScreenState extends State<NasManagerScreen> {
   void initState() {
     super.initState();
     _loadProfiles();
+    // Check for app updates after Google login
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppUpdater.checkForUpdate(context);
+    });
   }
 
   Future<void> _loadProfiles() async {
@@ -132,16 +137,41 @@ class _NasManagerScreenState extends State<NasManagerScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    auth.displayName.isNotEmpty ? auth.displayName : 'SynoHub',
-                    style: GoogleFonts.manrope(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onSurface,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  // Line 1: Name + Premium
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          auth.displayName.isNotEmpty ? auth.displayName : 'SynoHub',
+                          style: GoogleFonts.manrope(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (UserTierProvider.instance.isVip) ...[
+                        const SizedBox(width: 8),
+                        ShaderMask(
+                          shaderCallback: (bounds) => const LinearGradient(
+                            colors: [Color(0xFFE0C3FC), Color(0xFFFFD700), Color(0xFFFFA500)],
+                          ).createShader(bounds),
+                          child: Text(
+                            'Premium',
+                            style: GoogleFonts.manrope(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
+                  // Line 2: Email + VIP badge
                   if (auth.email.isNotEmpty)
                     Row(
                       mainAxisSize: MainAxisSize.min,

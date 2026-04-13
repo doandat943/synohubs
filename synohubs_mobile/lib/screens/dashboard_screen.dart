@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_colors.dart';
 import '../utils/nas_models.dart';
 import '../services/session_manager.dart';
-import '../services/app_updater.dart';
 import '../widgets/glass_card.dart';
 import 'resource_monitor_screen.dart';
 import 'storage_manager_screen.dart';
@@ -23,10 +22,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     SessionManager.instance.addListener(_onDataChanged);
-    // Check for app updates after the first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) AppUpdater.checkForUpdate(context);
-    });
   }
 
   @override
