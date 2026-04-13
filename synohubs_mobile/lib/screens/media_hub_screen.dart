@@ -5,6 +5,7 @@ import '../theme/app_colors.dart';
 import '../services/session_manager.dart';
 import '../services/tmdb_service.dart';
 import 'video_player_screen.dart';
+import 'music_tab_view.dart';
 import '../l10n/app_localizations.dart';
 
 /// Media file entry from FileStation.
@@ -77,6 +78,9 @@ class MediaHubScreen extends StatefulWidget {
 }
 
 class _MediaHubScreenState extends State<MediaHubScreen> {
+  // Active sub-tab: 0 = Video, 1 = Music
+  int _activeTab = 0;
+
   // Selected media folder
   String? _selectedFolder;
   String? _selectedFolderName;
@@ -439,6 +443,82 @@ class _MediaHubScreenState extends State<MediaHubScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // ── Tab Switcher ──
+        _buildTabSwitcher(),
+
+        // ── Content ──
+        Expanded(
+          child: _activeTab == 1
+              ? const MusicTabView()
+              : _buildVideoContent(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabSwitcher() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.outlineVariant.withValues(alpha: 0.1),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          _tabButton(Icons.videocam, 'Video', 0),
+          const SizedBox(width: 8),
+          _tabButton(Icons.music_note, 'Music', 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabButton(IconData icon, String label, int index) {
+    final active = _activeTab == index;
+    return GestureDetector(
+      onTap: () => setState(() => _activeTab = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: active
+              ? AppColors.primary.withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: active
+                ? AppColors.primary.withValues(alpha: 0.25)
+                : AppColors.outlineVariant.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: active ? AppColors.primary : AppColors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                color: active ? AppColors.primary : AppColors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoContent() {
     Widget body;
     if (_selectedFolder == null) {
       body = _buildNoFolderSelected();
