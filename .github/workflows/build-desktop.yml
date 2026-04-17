@@ -7,17 +7,6 @@ on:
       - 'v*'
   # Hoặc chạy thủ công từ GitHub UI
   workflow_dispatch:
-    inputs:
-      platform:
-        description: 'Platform to build'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - macos
-          - windows
-          - linux
 
 permissions:
   contents: write  # Cần để tạo GitHub Release
@@ -43,14 +32,6 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     name: Build ${{ matrix.name }}
-
-    # Lọc platform nếu chạy workflow_dispatch
-    if: >-
-      github.event_name == 'push' ||
-      github.event.inputs.platform == 'all' ||
-      (github.event.inputs.platform == 'macos' && contains(matrix.platform, 'macos')) ||
-      (github.event.inputs.platform == 'windows' && matrix.platform == 'windows-latest') ||
-      (github.event.inputs.platform == 'linux' && matrix.platform == 'ubuntu-22.04')
 
     steps:
       - name: Checkout code
