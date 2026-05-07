@@ -28,10 +28,8 @@ synohubs/dist/
 synohubs/src-tauri/target/
 synohubs/src-tauri/gen/
 
-# ── Website (synohubs.com) ──
-synohubs.com/node_modules/
-synohubs.com/dist/
-synohubs.com/.wrangler/
+# ── Website (synohubs.com) — excluded from repo ──
+synohubs.com/
 
 # ── General ──
 node_modules/
