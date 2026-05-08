@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import '../theme/app_colors.dart';
 import '../services/session_manager.dart';
+import '../services/nas_cache_manager.dart';
 import '../l10n/app_localizations.dart';
 import 'photo_viewer_screen.dart';
 
@@ -1185,6 +1186,7 @@ class _PhotosScreenState extends State<PhotosScreen>
                       children: [
                         if (url != null)
                           CachedNetworkImage(
+                            cacheManager: NasCacheManager.instance,
                             imageUrl: url,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
@@ -1305,6 +1307,7 @@ class _PhotosScreenState extends State<PhotosScreen>
         children: [
           if (url != null)
             CachedNetworkImage(
+              cacheManager: NasCacheManager.instance,
               imageUrl: url,
               fit: BoxFit.cover,
               placeholder: (_, __) =>
@@ -1607,6 +1610,7 @@ class _PhotosScreenState extends State<PhotosScreen>
                 color: AppColors.surfaceContainerHigh,
                 child: coverUrl != null
                     ? CachedNetworkImage(
+                        cacheManager: NasCacheManager.instance,
                         imageUrl: coverUrl,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => const Center(
@@ -2385,6 +2389,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   ),
                   child: url != null
                       ? CachedNetworkImage(
+                          cacheManager: NasCacheManager.instance,
                           imageUrl: url,
                           fit: BoxFit.cover,
                           placeholder: (_, __) =>

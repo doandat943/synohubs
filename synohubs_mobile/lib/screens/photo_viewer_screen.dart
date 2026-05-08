@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path_provider/path_provider.dart';
 import '../theme/app_colors.dart';
 import '../services/session_manager.dart';
+import '../services/nas_cache_manager.dart';
 import '../l10n/app_localizations.dart';
 import 'photos_screen.dart';
 
@@ -686,6 +687,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
           alignment: Alignment.center,
           children: [
             CachedNetworkImage(
+              cacheManager: NasCacheManager.instance,
               imageUrl: thumbUrl,
               fit: BoxFit.contain,
               placeholder: (_, __) => const Center(
@@ -736,6 +738,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                     alignment: Alignment.center,
                     children: [
                       CachedNetworkImage(
+                        cacheManager: NasCacheManager.instance,
                         imageUrl: thumbUrl,
                         fit: BoxFit.contain,
                       ),
@@ -779,6 +782,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                   );
                 },
                 errorBuilder: (_, __, ___) => CachedNetworkImage(
+                  cacheManager: NasCacheManager.instance,
                   imageUrl: thumbUrl,
                   fit: BoxFit.contain,
                   errorWidget: (_, __, ___) => const Center(
@@ -791,6 +795,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                 ),
               )
             : CachedNetworkImage(
+                cacheManager: NasCacheManager.instance,
                 imageUrl: thumbUrl,
                 fit: BoxFit.contain,
                 placeholder: (_, __) => const Center(
