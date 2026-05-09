@@ -10,6 +10,7 @@ import Packages from './screens/Packages/Packages';
 import Docker from './screens/Docker/Docker';
 import ResourceMonitor from './screens/ResourceMonitor/ResourceMonitor';
 import UsersGroups from './screens/UsersGroups/UsersGroups';
+import LogCenter from './screens/LogCenter/LogCenter';
 import PlaceholderScreen from './screens/PlaceholderScreen';
 
 /**
@@ -69,6 +70,7 @@ function App() {
         <Route path="users" element={<UsersGroups />} />
         <Route path="packages" element={<Packages />} />
         <Route path="docker" element={<Docker />} />
+        <Route path="logs" element={<LogCenter />} />
         <Route path="settings" element={<PlaceholderScreen title="Settings" icon="Settings" />} />
       </Route>
 

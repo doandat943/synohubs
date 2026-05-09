@@ -14,6 +14,7 @@ mod synology {
         pub port: u16,
         pub use_https: bool,
         pub sid: Option<String>,
+        pub syno_token: Option<String>,
         client: Client,
     }
 
@@ -21,7 +22,7 @@ mod synology {
         pub fn new(host: &str, port: u16, use_https: bool) -> Self {
             let client = Client::builder()
                 .danger_accept_invalid_certs(true) // NAS self-signed certs
-                .timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(180)) // Long timeout for package install (3-step flow)
                 .build()
                 .unwrap_or_default();
 
@@ -30,6 +31,7 @@ mod synology {
                 port,
                 use_https,
                 sid: None,
+                syno_token: None,
                 client,
             }
         }
@@ -49,10 +51,14 @@ mod synology {
             }
 
             let url = format!("{}/{}", self.base_url(), endpoint);
-            let resp = self
-                .client
-                .get(&url)
-                .query(&params)
+            let mut req = self.client.get(&url).query(&params);
+
+            // DSM 7 requires X-SYNO-TOKEN when session was created with enable_syno_token
+            if let Some(ref token) = self.syno_token {
+                req = req.header("X-SYNO-TOKEN", token);
+            }
+
+            let resp = req
                 .send()
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
@@ -66,6 +72,7 @@ mod synology {
         }
 
         /// POST request for mutating operations (create, delete, set)
+        /// Includes X-SYNO-TOKEN header for CSRF protection (required by DSM 7)
         async fn post(
             &self,
             endpoint: &str,
@@ -76,10 +83,14 @@ mod synology {
             }
 
             let url = format!("{}/{}", self.base_url(), endpoint);
-            let resp = self
-                .client
-                .post(&url)
-                .form(&params)
+            let mut req = self.client.post(&url).form(&params);
+
+            // DSM 7 requires X-SYNO-TOKEN header for CSRF protection on POST
+            if let Some(ref token) = self.syno_token {
+                req = req.header("X-SYNO-TOKEN", token);
+            }
+
+            let resp = req
                 .send()
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
@@ -108,8 +119,9 @@ mod synology {
             params.insert("method".to_string(), "login".to_string());
             params.insert("account".to_string(), account.to_string());
             params.insert("passwd".to_string(), passwd.to_string());
-            params.insert("session".to_string(), "FileStation".to_string());
+            params.insert("session".to_string(), "Core".to_string());
             params.insert("format".to_string(), "sid".to_string());
+            params.insert("enable_syno_token".to_string(), "yes".to_string());
 
             // If we have a trusted device_id, send it to skip 2FA
             // IMPORTANT: device_name must always be sent alongside device_id
@@ -134,11 +146,13 @@ mod synology {
             // Log for debugging device token issues
             if resp["success"].as_bool() == Some(true) {
                 self.sid = resp["data"]["sid"].as_str().map(String::from);
+                self.syno_token = resp["data"]["synotoken"].as_str().map(String::from);
                 // Synology may return the device token as "did" or "device_id"
                 let did = resp["data"]["did"].as_str()
                     .or_else(|| resp["data"]["device_id"].as_str())
                     .unwrap_or("none");
-                eprintln!("[SynoHubs] Login success, did={}", did);
+                let has_token = self.syno_token.is_some();
+                eprintln!("[SynoHubs] Login success, did={}, syno_token={}", did, has_token);
             } else {
                 let code = resp["error"]["code"].as_i64().unwrap_or(0);
                 eprintln!("[SynoHubs] Login failed, code={}, error={}", code, resp["error"]);
@@ -156,7 +170,7 @@ mod synology {
             params.insert("api".to_string(), "SYNO.API.Auth".to_string());
             params.insert("version".to_string(), "6".to_string());
             params.insert("method".to_string(), "logout".to_string());
-            params.insert("session".to_string(), "FileStation".to_string());
+            params.insert("session".to_string(), "Core".to_string());
             let _ = self.get("auth.cgi", params).await;
             self.sid = None;
             Ok(())
@@ -204,12 +218,58 @@ mod synology {
             self.get("entry.cgi", params).await
         }
 
-        /// Get packages list
+        /// Get packages list — v2 returns status/startable/description by default
         pub async fn get_packages(&self) -> Result<Value, String> {
             let mut params = HashMap::new();
             params.insert("api".to_string(), "SYNO.Core.Package".to_string());
             params.insert("version".to_string(), "2".to_string());
             params.insert("method".to_string(), "list".to_string());
+            self.get("entry.cgi", params).await
+        }
+
+        // ── Log Center ─────────────────────────────────────────────
+
+        /// Fetch system logs from Log Center
+        pub async fn get_logs(&self, offset: u32, limit: u32, logtype: &str) -> Result<Value, String> {
+            let mut params = HashMap::new();
+            params.insert("api".to_string(), "SYNO.Core.SyslogClient.Log".to_string());
+            params.insert("version".to_string(), "1".to_string());
+            params.insert("method".to_string(), "list".to_string());
+            params.insert("offset".to_string(), offset.to_string());
+            params.insert("limit".to_string(), limit.to_string());
+            // Only include logtype if specified (empty = all logs)
+            if !logtype.is_empty() {
+                params.insert("logtype".to_string(), logtype.to_string());
+            }
+            self.get("entry.cgi", params).await
+        }
+
+        /// Fetch log count stats
+        pub async fn get_log_status(&self) -> Result<Value, String> {
+            let mut params = HashMap::new();
+            params.insert("api".to_string(), "SYNO.Core.SyslogClient.Status".to_string());
+            params.insert("version".to_string(), "1".to_string());
+            params.insert("method".to_string(), "cnt_get".to_string());
+            self.get("entry.cgi", params).await
+        }
+
+        /// Fetch latest log entries (overview)
+        pub async fn get_latest_logs(&self) -> Result<Value, String> {
+            let mut params = HashMap::new();
+            params.insert("api".to_string(), "SYNO.Core.SyslogClient.Status".to_string());
+            params.insert("version".to_string(), "1".to_string());
+            params.insert("method".to_string(), "latestlog_get".to_string());
+            self.get("entry.cgi", params).await
+        }
+
+        /// Fetch current active connections
+        pub async fn get_current_connections(&self, offset: u32, limit: u32) -> Result<Value, String> {
+            let mut params = HashMap::new();
+            params.insert("api".to_string(), "SYNO.Core.CurrentConnection".to_string());
+            params.insert("version".to_string(), "1".to_string());
+            params.insert("method".to_string(), "list".to_string());
+            params.insert("offset".to_string(), offset.to_string());
+            params.insert("limit".to_string(), limit.to_string());
             self.get("entry.cgi", params).await
         }
 
@@ -223,15 +283,95 @@ mod synology {
             self.get("entry.cgi", params).await
         }
 
-        /// Install a package by name
-        pub async fn package_install(&self, id: &str, volume: &str) -> Result<Value, String> {
+        /// Install a package by name — full 3-step DSM flow:
+        /// 1. Trigger download (install v1 with name/url/checksum)
+        /// 2. Poll Installation.Download.check until download completes (status=non_installed)
+        /// 3. Install the downloaded file with path + volume
+        pub async fn package_install(&self, id: &str, url: &str, volume: &str, size: u64, checksum: &str) -> Result<Value, String> {
+            eprintln!("[SynoHubs] package_install START: id={}, volume={}, url={}, size={}, checksum={}", id, volume, url, size, checksum);
+
+            // ─── Step 1: Trigger download ───
             let mut params = HashMap::new();
             params.insert("api".to_string(), "SYNO.Core.Package.Installation".to_string());
             params.insert("version".to_string(), "1".to_string());
             params.insert("method".to_string(), "install".to_string());
-            params.insert("id".to_string(), id.to_string());
-            params.insert("volume".to_string(), volume.to_string());
-            self.get("entry.cgi", params).await
+            // DSM sends string values wrapped in JSON double-quotes
+            params.insert("name".to_string(), format!("\"{}\"", id));
+            params.insert("url".to_string(), format!("\"{}\"", url));
+            params.insert("filesize".to_string(), size.to_string());
+            params.insert("type".to_string(), "0".to_string());
+            params.insert("blqinst".to_string(), "false".to_string());
+            params.insert("operation".to_string(), "\"install\"".to_string());
+            if !checksum.is_empty() {
+                params.insert("checksum".to_string(), format!("\"{}\"", checksum));
+            }
+
+            let dl_result = self.post("entry.cgi", params).await?;
+            eprintln!("[SynoHubs] Step 1 download result: {:?}", dl_result);
+
+            let taskid = dl_result
+                .get("data")
+                .and_then(|d| d.get("taskid"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if taskid.is_empty() {
+                return Err(format!("Install failed: no taskid returned. Response: {:?}", dl_result));
+            }
+            eprintln!("[SynoHubs] Step 1 taskid: {}", taskid);
+
+            // ─── Step 2: Poll Installation.Download.check until download completes ───
+            let mut filename = String::new();
+            for attempt in 0..40 {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let mut check_params = HashMap::new();
+                check_params.insert("api".to_string(), "SYNO.Core.Package.Installation.Download".to_string());
+                check_params.insert("version".to_string(), "1".to_string());
+                check_params.insert("method".to_string(), "check".to_string());
+                check_params.insert("taskid".to_string(), format!("\"{}\"", taskid));
+
+                let check_result = self.post("entry.cgi", check_params).await;
+                match &check_result {
+                    Ok(val) => {
+                        let status = val.get("data")
+                            .and_then(|d| d.get("status"))
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("unknown");
+                        eprintln!("[SynoHubs] Step 2 poll #{}: status={}", attempt + 1, status);
+
+                        if status == "non_installed" {
+                            // Download completed — extract filename
+                            filename = val.get("data")
+                                .and_then(|d| d.get("filename"))
+                                .and_then(|f| f.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            eprintln!("[SynoHubs] Step 2 download complete: filename={}", filename);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[SynoHubs] Step 2 poll #{} error: {}", attempt + 1, e);
+                    }
+                }
+            }
+
+            if filename.is_empty() {
+                return Err("Download timed out or failed: no filename returned".to_string());
+            }
+
+            // ─── Step 3: Install the downloaded file with path + volume ───
+            let mut install_params = HashMap::new();
+            install_params.insert("api".to_string(), "SYNO.Core.Package.Installation".to_string());
+            install_params.insert("version".to_string(), "1".to_string());
+            install_params.insert("method".to_string(), "install".to_string());
+            install_params.insert("path".to_string(), format!("\"{}\"", filename));
+            install_params.insert("volume".to_string(), format!("\"{}\"", volume));
+
+            let install_result = self.post("entry.cgi", install_params).await;
+            eprintln!("[SynoHubs] Step 3 install result: {:?}", install_result);
+            install_result
         }
 
         /// Uninstall a package by name
@@ -241,27 +381,27 @@ mod synology {
             params.insert("version".to_string(), "1".to_string());
             params.insert("method".to_string(), "uninstall".to_string());
             params.insert("id".to_string(), id.to_string());
-            self.get("entry.cgi", params).await
+            self.post("entry.cgi", params).await
         }
 
         /// Start a package
         pub async fn package_start(&self, id: &str) -> Result<Value, String> {
             let mut params = HashMap::new();
-            params.insert("api".to_string(), "SYNO.Core.Package".to_string());
-            params.insert("version".to_string(), "2".to_string());
+            params.insert("api".to_string(), "SYNO.Core.Package.Control".to_string());
+            params.insert("version".to_string(), "1".to_string());
             params.insert("method".to_string(), "start".to_string());
             params.insert("id".to_string(), id.to_string());
-            self.get("entry.cgi", params).await
+            self.post("entry.cgi", params).await
         }
 
         /// Stop a package
         pub async fn package_stop(&self, id: &str) -> Result<Value, String> {
             let mut params = HashMap::new();
-            params.insert("api".to_string(), "SYNO.Core.Package".to_string());
-            params.insert("version".to_string(), "2".to_string());
+            params.insert("api".to_string(), "SYNO.Core.Package.Control".to_string());
+            params.insert("version".to_string(), "1".to_string());
             params.insert("method".to_string(), "stop".to_string());
             params.insert("id".to_string(), id.to_string());
-            self.get("entry.cgi", params).await
+            self.post("entry.cgi", params).await
         }
 
         // ── User & Group Management APIs ─────────────────────
@@ -1317,7 +1457,61 @@ async fn group_member_list(state: State<'_, AppState>, group: String) -> Result<
     api.group_member_list(&group).await
 }
 
+// ── Log Center Commands ────────────────────────────────────
+
+#[tauri::command]
+async fn nas_get_logs(
+    state: State<'_, AppState>,
+    offset: Option<u32>,
+    limit: Option<u32>,
+    logtype: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.get_logs(
+        offset.unwrap_or(0),
+        limit.unwrap_or(100),
+        &logtype.unwrap_or_else(|| "general".to_string()),
+    ).await
+}
+
+#[tauri::command]
+async fn nas_get_log_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.get_log_status().await
+}
+
+#[tauri::command]
+async fn nas_get_latest_logs(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.get_latest_logs().await
+}
+
+#[tauri::command]
+async fn nas_get_connections(
+    state: State<'_, AppState>,
+    offset: Option<u32>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.get_current_connections(
+        offset.unwrap_or(0),
+        limit.unwrap_or(50),
+    ).await
+}
+
 // ── Package Management Commands ────────────────────────────
+
+/// List installed packages (direct call — faster than nas_get_system_info)
+#[tauri::command]
+async fn package_list_installed(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.get_packages().await
+}
 
 /// List all available packages from Synology's package server
 #[tauri::command]
@@ -1327,12 +1521,12 @@ async fn package_list_server(state: State<'_, AppState>) -> Result<serde_json::V
     api.package_list_server().await
 }
 
-/// Install a package
+/// Install a package (full 3-step DSM flow — may take 30-120s)
 #[tauri::command]
-async fn package_install(state: State<'_, AppState>, id: String, volume: String) -> Result<serde_json::Value, String> {
+async fn package_install(state: State<'_, AppState>, id: String, url: String, volume: String, size: u64, checksum: String) -> Result<serde_json::Value, String> {
     let guard = state.api.lock().await;
     let api = guard.as_ref().ok_or("Not connected")?;
-    api.package_install(&id, &volume).await
+    api.package_install(&id, &url, &volume, size, &checksum).await
 }
 
 /// Uninstall a package
@@ -2302,6 +2496,7 @@ pub fn run() {
             docker_stop,
             docker_restart,
             docker_get_resource,
+            package_list_installed,
             package_list_server,
             package_install,
             package_uninstall,
@@ -2326,6 +2521,10 @@ pub fn run() {
             secure_save,
             secure_load,
             secure_delete,
+            nas_get_logs,
+            nas_get_log_status,
+            nas_get_latest_logs,
+            nas_get_connections,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

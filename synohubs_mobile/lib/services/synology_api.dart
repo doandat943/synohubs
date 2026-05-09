@@ -567,46 +567,57 @@ class SynologyApi {
   // ── Log Center ───────────────────────────────────────────────────
 
   /// Fetch recent logs from Log Center.
+  /// Uses SYNO.Core.SyslogClient.Log (DSM 7+) with method "list".
   Future<Map<String, dynamic>> getLogs({
     int offset = 0,
     int limit = 50,
-    String logType = 'general',
+    String logType = '',
   }) async {
-    // Try SYNO.Core.SyslogClient.Log first (DSM 7+)
-    try {
-      final resp = await _get('entry.cgi', {
-        'api': 'SYNO.Core.SyslogClient.Log.List',
-        'version': '1',
-        'method': 'get',
-        'offset': '$offset',
-        'limit': '$limit',
-        'log_type': logType,
-      });
-      if (resp['success'] == true) return resp;
-    } catch (_) {}
-
-    // Fallback: older log API
-    return _get('entry.cgi', {
-      'api': 'SYNO.SyslogClient.Log',
-      'version': '2',
+    final params = <String, String>{
+      'api': 'SYNO.Core.SyslogClient.Log',
+      'version': '1',
       'method': 'list',
       'offset': '$offset',
       'limit': '$limit',
+    };
+    // Only include logtype if specified (empty = all logs)
+    if (logType.isNotEmpty) {
+      params['logtype'] = logType;
+    }
+    return _get('entry.cgi', params);
+  }
+
+  /// Fetch Log Center overview statistics (log count, latest logs).
+  /// Uses SYNO.Core.SyslogClient.Status methods.
+  Future<Map<String, dynamic>> getLogStatusCount() async {
+    return _get('entry.cgi', {
+      'api': 'SYNO.Core.SyslogClient.Status',
+      'version': '1',
+      'method': 'cnt_get',
     });
   }
 
-  /// Fetch connection logs (login history).
+  /// Fetch latest log entries (for overview).
+  Future<Map<String, dynamic>> getLatestLogs() async {
+    return _get('entry.cgi', {
+      'api': 'SYNO.Core.SyslogClient.Status',
+      'version': '1',
+      'method': 'latestlog_get',
+    });
+  }
+
+  /// Fetch current active connections (who is logged in).
+  /// Uses SYNO.Core.CurrentConnection (confirmed available).
   Future<Map<String, dynamic>> getConnectionLogs({
     int offset = 0,
     int limit = 50,
   }) async {
     return _get('entry.cgi', {
-      'api': 'SYNO.Core.SyslogClient.Log.List',
+      'api': 'SYNO.Core.CurrentConnection',
       'version': '1',
-      'method': 'get',
+      'method': 'list',
       'offset': '$offset',
       'limit': '$limit',
-      'log_type': 'connection',
     });
   }
 

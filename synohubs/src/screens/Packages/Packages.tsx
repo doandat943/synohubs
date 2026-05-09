@@ -18,12 +18,14 @@ interface PackageItem {
   desc?: string;
   additional?: {
     status?: string;
+    status_origin?: string;
     running_status?: string;
     is_running?: boolean;
     dsm_apps?: string;
     install_type?: string;
     description?: string;
     startable?: boolean;
+    ctl_uninstall?: boolean;
   };
   status?: string;
   is_running?: boolean;
@@ -48,6 +50,7 @@ interface ServerPackage {
   download_count?: number;
   recent_download_count?: number;
   beta?: boolean;
+  md5?: string;
 }
 
 type TabType = 'installed' | 'available';
@@ -62,6 +65,7 @@ const Packages: React.FC = () => {
   const [search, setSearch] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [defaultVolume, setDefaultVolume] = useState('/volume1');
   const { showDialog, DialogComponent } = useConfirmDialog();
 
   // ── Fetch installed packages ──
@@ -69,10 +73,24 @@ const Packages: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const result: any = await invoke('nas_get_system_info');
-      const pkgList = result?.packages?.packages || [];
+      // Direct API call — faster and more reliable than nas_get_system_info
+      const result: any = await invoke('package_list_installed');
+      const pkgList = result?.data?.packages || [];
+      console.log(`[Packages] Loaded ${pkgList.length} installed packages`);
       setInstalledPkgs(pkgList);
+
+      // Auto-detect volume from installed package paths
+      if (pkgList.length > 0) {
+        const samplePath = pkgList[0]?.additional?.installed_info?.path || '';
+        // Path looks like "/volume2/@appstore/VPNCenter" or "/usr/local/packages/@appstore/..."
+        const volMatch = samplePath.match(/^(\/volume\d+)/);
+        if (volMatch) {
+          setDefaultVolume(volMatch[1]);
+          console.log('[Packages] Detected volume:', volMatch[1]);
+        }
+      }
     } catch (err: any) {
+      console.error('[Packages] fetchInstalled error:', err);
       setError(err?.toString() || 'Failed to load packages');
     } finally {
       setLoading(false);
@@ -102,13 +120,23 @@ const Packages: React.FC = () => {
 
   // ── Package actions ──
   const isRunning = (pkg: PackageItem): boolean => {
+    const a = pkg?.additional || {};
     return (
-      pkg?.additional?.status === 'running' ||
-      pkg?.additional?.running_status === 'running' ||
+      a.status === 'running' ||
+      a.status_origin === 'running' ||
+      a.running_status === 'running' ||
+      a.is_running === true ||
       pkg?.status === 'running' ||
-      pkg?.additional?.is_running === true ||
       pkg?.is_running === true
     );
+  };
+
+  const isStartable = (pkg: PackageItem): boolean => {
+    return pkg?.additional?.startable === true;
+  };
+
+  const isSystemPkg = (pkg: PackageItem): boolean => {
+    return pkg?.additional?.install_type === 'system' && pkg?.additional?.ctl_uninstall !== true;
   };
 
   const installedIds = useMemo(() =>
@@ -118,14 +146,21 @@ const Packages: React.FC = () => {
   const handleStartStop = async (id: string, running: boolean) => {
     setActionLoading(id);
     try {
-      if (running) {
-        await invoke('package_stop', { id });
-      } else {
-        await invoke('package_start', { id });
-      }
+      const result: any = running
+        ? await invoke('package_stop', { id })
+        : await invoke('package_start', { id });
+      console.log(`[Packages] ${running ? 'Stop' : 'Start'} ${id}:`, result);
+      // Small delay to let NAS update state
+      await new Promise(r => setTimeout(r, 1500));
       await fetchInstalled();
     } catch (err: any) {
-      setError(err?.toString());
+      await showDialog({
+        title: `Failed to ${running ? 'stop' : 'start'} package`,
+        message: err?.toString() || 'Unknown error',
+        variant: 'danger',
+        showCancel: false,
+        confirmText: 'OK',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -142,9 +177,37 @@ const Packages: React.FC = () => {
 
     setActionLoading(pkg.id);
     try {
-      await invoke('package_install', { id: pkg.id, volume: '/volume1' });
-      await fetchInstalled();
+      console.log('[Packages] Installing', pkg.id, 'to', defaultVolume, 'from', pkg.link, 'checksum', pkg.md5);
+      const result: any = await invoke('package_install', {
+        id: pkg.id,
+        url: pkg.link || '',
+        volume: defaultVolume,
+        size: pkg.size || 0,
+        checksum: pkg.md5 || '',
+      });
+      console.log('[Packages] Install result:', result);
+      if (result?.success === false) {
+        const code = result?.error?.code || 'unknown';
+        await showDialog({
+          title: 'Installation Failed',
+          message: `Error code: ${code}\n\n${JSON.stringify(result?.error || result, null, 2)}`,
+          variant: 'danger',
+          showCancel: false,
+          confirmText: 'OK',
+        });
+      } else {
+        // Backend handles the full 3-step flow, so package should be installed now
+        await fetchInstalled();
+        await showDialog({
+          title: 'Installed!',
+          message: `${pkg.dname || pkg.id} has been successfully installed.`,
+          variant: 'info',
+          showCancel: false,
+          confirmText: 'OK',
+        });
+      }
     } catch (err: any) {
+      console.error('[Packages] Install error:', err);
       await showDialog({
         title: 'Installation Failed',
         message: err?.toString() || 'Could not install the package.',
@@ -168,10 +231,26 @@ const Packages: React.FC = () => {
 
     setActionLoading(id);
     try {
-      await invoke('package_uninstall', { id });
+      const result: any = await invoke('package_uninstall', { id });
+      console.log(`[Packages] Uninstall ${id}:`, result);
+      // Small delay to let NAS update state
+      await new Promise(r => setTimeout(r, 2000));
       await fetchInstalled();
+      await showDialog({
+        title: 'Uninstalled',
+        message: `${name} has been successfully removed.`,
+        variant: 'info',
+        showCancel: false,
+        confirmText: 'OK',
+      });
     } catch (err: any) {
-      setError(err?.toString());
+      await showDialog({
+        title: 'Uninstall Failed',
+        message: err?.toString() || 'Could not uninstall the package.',
+        variant: 'danger',
+        showCancel: false,
+        confirmText: 'OK',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -293,6 +372,8 @@ const Packages: React.FC = () => {
                     key={pkg.id || pkg.name}
                     pkg={pkg}
                     running
+                    startable={isStartable(pkg)}
+                    systemPkg={isSystemPkg(pkg)}
                     actionLoading={actionLoading}
                     onStartStop={() => handleStartStop(pkg.id || pkg.name, true)}
                     onUninstall={() => handleUninstall(pkg.id || pkg.name, pkg.dname || pkg.name)}
@@ -309,6 +390,8 @@ const Packages: React.FC = () => {
                     key={pkg.id || pkg.name}
                     pkg={pkg}
                     running={false}
+                    startable={isStartable(pkg)}
+                    systemPkg={isSystemPkg(pkg)}
                     actionLoading={actionLoading}
                     onStartStop={() => handleStartStop(pkg.id || pkg.name, false)}
                     onUninstall={() => handleUninstall(pkg.id || pkg.name, pkg.dname || pkg.name)}
@@ -361,11 +444,14 @@ const Packages: React.FC = () => {
 const InstalledCard: React.FC<{
   pkg: PackageItem;
   running: boolean;
+  startable: boolean;
+  systemPkg: boolean;
   actionLoading: string | null;
   onStartStop: () => void;
   onUninstall: () => void;
-}> = ({ pkg, running, actionLoading, onStartStop, onUninstall }) => {
+}> = ({ pkg, running, startable, systemPkg, actionLoading, onStartStop, onUninstall }) => {
   const displayName = pkg.dname || pkg.name || pkg.id;
+  const description = pkg.additional?.description || pkg.desc;
   const isLoading = actionLoading === (pkg.id || pkg.name);
 
   return (
@@ -376,7 +462,7 @@ const InstalledCard: React.FC<{
       <div className="package-card__info">
         <div className="package-card__name">{displayName}</div>
         <div className="package-card__version">v{pkg.version || '?'}</div>
-        {pkg.desc && <div className="package-card__desc">{pkg.desc}</div>}
+        {description && <div className="package-card__desc">{description}</div>}
       </div>
       <div className="package-card__actions">
         <div className="package-card__status">
@@ -391,23 +477,27 @@ const InstalledCard: React.FC<{
           )}
         </div>
         <div className="package-card__btns">
-          <button
-            className={`package-card__action-btn ${running ? 'package-card__action-btn--stop' : 'package-card__action-btn--start'}`}
-            onClick={onStartStop}
-            disabled={isLoading}
-            title={running ? 'Stop' : 'Start'}
-          >
-            {isLoading ? <Loader size={12} className="animate-spin" /> :
-              running ? <StopCircle size={14} /> : <PlayCircle size={14} />}
-          </button>
-          <button
-            className="package-card__action-btn package-card__action-btn--uninstall"
-            onClick={onUninstall}
-            disabled={isLoading}
-            title="Uninstall"
-          >
-            <Trash2 size={13} />
-          </button>
+          {startable && (
+            <button
+              className={`package-card__action-btn ${running ? 'package-card__action-btn--stop' : 'package-card__action-btn--start'}`}
+              onClick={onStartStop}
+              disabled={isLoading}
+              title={running ? 'Stop' : 'Start'}
+            >
+              {isLoading ? <Loader size={12} className="animate-spin" /> :
+                running ? <StopCircle size={14} /> : <PlayCircle size={14} />}
+            </button>
+          )}
+          {!systemPkg && (
+            <button
+              className="package-card__action-btn package-card__action-btn--uninstall"
+              onClick={onUninstall}
+              disabled={isLoading}
+              title="Uninstall"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       </div>
     </div>

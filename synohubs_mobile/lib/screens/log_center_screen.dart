@@ -45,33 +45,36 @@ class _LogCenterScreenState extends State<LogCenterScreen>
         api.getConnectionLogs(offset: 0, limit: 50),
       ]);
 
-      // Parse general logs
+      // Debug: print raw response to understand data structure
+      debugPrint('[LogCenter] General logs response: ${results[0]}');
+      debugPrint('[LogCenter] Connection logs response: ${results[1]}');
+
+      // Parse general logs — try multiple known data shapes
       if (results[0]['success'] == true) {
         final data = results[0]['data'] as Map<String, dynamic>? ?? {};
-        _generalLogs = List<Map<String, dynamic>>.from(
-          data['items'] as List? ??
-              data['logs'] as List? ??
-              data['result'] as List? ??
-              [],
-        );
+        final logList = data['items'] as List? ??
+            data['logs'] as List? ??
+            data['result'] as List? ??
+            data['data'] as List? ??
+            [];
+        _generalLogs = List<Map<String, dynamic>>.from(logList);
         _totalGeneral = (data['total'] as int?) ?? _generalLogs.length;
       }
 
-      // Parse connection logs
+      // Parse connection logs (SYNO.Core.CurrentConnection)
       if (results[1]['success'] == true) {
         final data = results[1]['data'] as Map<String, dynamic>? ?? {};
-        _connectionLogs = List<Map<String, dynamic>>.from(
-          data['items'] as List? ??
-              data['logs'] as List? ??
-              data['result'] as List? ??
-              [],
-        );
+        final connList = data['items'] as List? ??
+            data['data'] as List? ??
+            [];
+        _connectionLogs = List<Map<String, dynamic>>.from(connList);
         _totalConnection = (data['total'] as int?) ?? _connectionLogs.length;
       }
 
       _loading = false;
       if (mounted) setState(() {});
     } catch (e) {
+      debugPrint('[LogCenter] Error fetching logs: $e');
       _loading = false;
       if (mounted) setState(() {});
     }
@@ -651,6 +654,7 @@ class _LogCenterScreenState extends State<LogCenterScreen>
         log['who'] as String? ??
         '';
     final event =
+        log['descr'] as String? ??
         log['msg'] as String? ??
         log['event'] as String? ??
         log['message'] as String? ??

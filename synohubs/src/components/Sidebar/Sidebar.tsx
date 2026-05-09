@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, Image, Film, Users, Package,
-  Settings, Activity, Lock, Container
+  Settings, Activity, Lock, Container, ScrollText
 } from 'lucide-react';
 import { useAuthStore, useNasStore } from '../../stores';
 import './Sidebar.css';
@@ -28,6 +28,7 @@ const adminNav: NavItem[] = [
   { icon: Users, label: 'Users & Groups', path: '/app/users', colorClass: 'icon--users' },
   { icon: Package, label: 'Packages', path: '/app/packages', colorClass: 'icon--packages' },
   { icon: Container, label: 'Docker', path: '/app/docker', colorClass: 'icon--docker' },
+  { icon: ScrollText, label: 'Log Center', path: '/app/logs', colorClass: 'icon--monitor' },
 ];
 
 const bottomNav: NavItem[] = [
