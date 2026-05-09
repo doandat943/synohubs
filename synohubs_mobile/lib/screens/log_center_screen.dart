@@ -41,7 +41,7 @@ class _LogCenterScreenState extends State<LogCenterScreen>
 
     try {
       final results = await Future.wait([
-        api.getLogs(offset: 0, limit: 100, logType: 'general'),
+        api.getLogs(offset: 0, limit: 200, logType: ''),
         api.getConnectionLogs(offset: 0, limit: 50),
       ]);
 

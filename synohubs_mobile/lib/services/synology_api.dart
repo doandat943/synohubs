@@ -258,10 +258,29 @@ class SynologyApi {
 
   // ── Running packages (services) ──────────────────────────────────
 
-  /// List all installed packages and their running status.
+  /// List all installed packages with status, startable, install_type.
+  /// Uses raw query to avoid URL-encoding the JSON array in 'additional'.
   Future<Map<String, dynamic>> getPackages() async {
+    final sidParam = _sid != null ? '&_sid=$_sid' : '';
+    final url = '$baseUrl/entry.cgi?api=SYNO.Core.Package&version=2&method=list'
+        '&additional=["status","startable","install_type","ctl_uninstall","description"]'
+        '$sidParam';
+    final uri = Uri.parse(url);
+    final ioClient = _buildClient();
+    try {
+      final request = await ioClient.getUrl(uri);
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      return jsonDecode(body) as Map<String, dynamic>;
+    } finally {
+      ioClient.close();
+    }
+  }
+
+  /// List all available packages from Synology's package server.
+  Future<Map<String, dynamic>> packageListServer() async {
     return _get('entry.cgi', {
-      'api': 'SYNO.Core.Package',
+      'api': 'SYNO.Core.Package.Server',
       'version': '2',
       'method': 'list',
     });
@@ -297,6 +316,64 @@ class SynologyApi {
     });
   }
 
+  /// Step 1 of package install: trigger download.
+  /// DSM requires JSON-quoted string values for name/url/operation.
+  Future<Map<String, dynamic>> packageInstallDownload(
+      String url, int size, String md5) async {
+    // Build raw POST body with JSON-quoted values (no double encoding)
+    final sid = _sid ?? '';
+    final body = 'api=SYNO.Core.Package.Installation&version=1&method=install'
+        '&url="$url"&filesize=$size&type=0&blqinst=false'
+        '&operation="install"'
+        '${md5.isNotEmpty ? '&checksum="$md5"' : ''}'
+        '&_sid=$sid';
+
+    final uri = Uri.parse('$baseUrl/entry.cgi');
+    final ioClient = _buildClient();
+    try {
+      final request = await ioClient.postUrl(uri);
+      request.headers.contentType = ContentType(
+          'application', 'x-www-form-urlencoded', charset: 'utf-8');
+      request.write(body);
+      final response = await request.close();
+      final respBody = await response.transform(utf8.decoder).join();
+      return jsonDecode(respBody) as Map<String, dynamic>;
+    } finally {
+      ioClient.close();
+    }
+  }
+
+  /// Step 2: Poll download status until finished.
+  Future<Map<String, dynamic>> packageInstallStatus(String taskId) async {
+    final sid = _sid ?? '';
+    final body = 'api=SYNO.Core.Package.Installation.Download&version=1'
+        '&method=check&taskid="$taskId"&_sid=$sid';
+
+    final uri = Uri.parse('$baseUrl/entry.cgi');
+    final ioClient = _buildClient();
+    try {
+      final request = await ioClient.postUrl(uri);
+      request.headers.contentType = ContentType(
+          'application', 'x-www-form-urlencoded', charset: 'utf-8');
+      request.write(body);
+      final response = await request.close();
+      final respBody = await response.transform(utf8.decoder).join();
+      return jsonDecode(respBody) as Map<String, dynamic>;
+    } finally {
+      ioClient.close();
+    }
+  }
+
+  /// Step 3: Install the downloaded package file.
+  Future<Map<String, dynamic>> packageInstallInstall(String packageId) async {
+    // After download completes, DSM installs with the path from step 2
+    return _get('entry.cgi', {
+      'api': 'SYNO.Core.Package.Installation',
+      'version': '1',
+      'method': 'install',
+      'id': packageId,
+    });
+  }
 
   // ── Docker / Container Manager ──────────────────────────────────
 
