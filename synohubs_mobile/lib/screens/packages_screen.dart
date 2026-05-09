@@ -40,11 +40,15 @@ class _PackagesScreenState extends State<PackagesScreen> {
           final m = p as Map<String, dynamic>;
           final additional = m['additional'] as Map<String, dynamic>? ?? {};
           final isRunning = additional['status'] == 'running' ||
+              additional['status_origin'] == 'running' ||
               additional['running_status'] == 'running' ||
               additional['is_running'] == true ||
               m['status'] == 'running' ||
               m['is_running'] == true;
-          final startable = additional['startable'] != false;
+          final startable = additional['startable'] == true;
+          final installType = additional['install_type'] as String? ?? '';
+          final ctlUninstall = additional['ctl_uninstall'] == true;
+          final isSystem = installType == 'system' && !ctlUninstall;
           return _PackageItem(
             id: m['id'] as String? ?? m['name'] as String? ?? '',
             name: m['dname'] as String? ?? m['name'] as String? ?? m['id'] as String? ?? '',
@@ -52,6 +56,7 @@ class _PackagesScreenState extends State<PackagesScreen> {
             desc: additional['description'] as String? ?? m['desc'] as String? ?? '',
             isRunning: isRunning,
             startable: startable,
+            isSystem: isSystem,
           );
         }).toList();
         _error = null;
@@ -76,10 +81,69 @@ class _PackagesScreenState extends State<PackagesScreen> {
       } else {
         await api.packageStart(id);
       }
-      await Future.delayed(const Duration(milliseconds: 1000));
+      await Future.delayed(const Duration(milliseconds: 1500));
       await _fetch();
     } catch (e) {
-      _error = 'Failed: $e';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+    _actionLoading = null;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _handleUninstall(String id, String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceContainer,
+        title: Text('Uninstall $name?',
+            style: GoogleFonts.manrope(
+              fontWeight: FontWeight.w700,
+              color: AppColors.onSurface,
+            )),
+        content: Text(
+          'The package and its configuration may be removed. This action cannot be undone.',
+          style: GoogleFonts.inter(fontSize: 13, color: AppColors.onSurfaceVariant),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.onSurfaceVariant)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Uninstall', style: GoogleFonts.inter(color: AppColors.error, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _actionLoading = id);
+    final api = SessionManager.instance.api;
+    if (api == null) return;
+
+    try {
+      await api.packageUninstall(id);
+      await Future.delayed(const Duration(milliseconds: 2000));
+      await _fetch();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$name has been uninstalled'),
+            backgroundColor: AppColors.secondary,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Uninstall failed: $e'), backgroundColor: AppColors.error),
+        );
+      }
     }
     _actionLoading = null;
     if (mounted) setState(() {});
@@ -349,7 +413,7 @@ class _PackagesScreenState extends State<PackagesScreen> {
               ),
             ),
 
-            // Status + Action
+            // Status + Actions
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -380,37 +444,62 @@ class _PackagesScreenState extends State<PackagesScreen> {
                     ],
                   ),
                 ),
-                if (pkg.startable) ...[
-                  const SizedBox(height: 6),
-                  GestureDetector(
-                    onTap: isPending ? null : () => _handleStartStop(pkg.id, pkg.isRunning),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: (pkg.isRunning ? AppColors.error : AppColors.secondary)
-                            .withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: isPending
-                          ? Center(
-                              child: SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Start/Stop button — only for startable packages
+                    if (pkg.startable)
+                      GestureDetector(
+                        onTap: isPending ? null : () => _handleStartStop(pkg.id, pkg.isRunning),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: (pkg.isRunning ? AppColors.error : AppColors.secondary)
+                                .withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: isPending
+                              ? Center(
+                                  child: SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: pkg.isRunning ? AppColors.error : AppColors.secondary,
+                                    ),
+                                  ),
+                                )
+                              : Icon(
+                                  pkg.isRunning ? Icons.stop_circle : Icons.play_circle,
+                                  size: 16,
                                   color: pkg.isRunning ? AppColors.error : AppColors.secondary,
                                 ),
-                              ),
-                            )
-                          : Icon(
-                              pkg.isRunning ? Icons.stop_circle : Icons.play_circle,
-                              size: 16,
-                              color: pkg.isRunning ? AppColors.error : AppColors.secondary,
-                            ),
-                    ),
-                  ),
-                ],
+                        ),
+                      ),
+                    // Uninstall button — only for non-system packages
+                    if (!pkg.isSystem) ...[
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: isPending ? null : () => _handleUninstall(pkg.id, pkg.name),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.delete_outline,
+                            size: 15,
+                            color: AppColors.error,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ],
@@ -465,6 +554,7 @@ class _PackageItem {
   final String desc;
   final bool isRunning;
   final bool startable;
+  final bool isSystem;
 
   _PackageItem({
     required this.id,
@@ -473,5 +563,6 @@ class _PackageItem {
     this.desc = '',
     this.isRunning = false,
     this.startable = true,
+    this.isSystem = false,
   });
 }

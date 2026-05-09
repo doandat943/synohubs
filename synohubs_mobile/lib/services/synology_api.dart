@@ -287,6 +287,17 @@ class SynologyApi {
     });
   }
 
+  /// Uninstall a package by its id.
+  Future<Map<String, dynamic>> packageUninstall(String id) async {
+    return _get('entry.cgi', {
+      'api': 'SYNO.Core.Package.Uninstallation',
+      'version': '1',
+      'method': 'uninstall',
+      'id': id,
+    });
+  }
+
+
   // ── Docker / Container Manager ──────────────────────────────────
 
   /// List all Docker containers.
