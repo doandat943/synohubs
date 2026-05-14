@@ -259,22 +259,13 @@ class SynologyApi {
   // ── Running packages (services) ──────────────────────────────────
 
   /// List all installed packages with status, startable, install_type.
-  /// Uses raw query to avoid URL-encoding the JSON array in 'additional'.
   Future<Map<String, dynamic>> getPackages() async {
-    final sidParam = _sid != null ? '&_sid=$_sid' : '';
-    final url = '$baseUrl/entry.cgi?api=SYNO.Core.Package&version=2&method=list'
-        '&additional=["status","startable","install_type","ctl_uninstall","description"]'
-        '$sidParam';
-    final uri = Uri.parse(url);
-    final ioClient = _buildClient();
-    try {
-      final request = await ioClient.getUrl(uri);
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
-      return jsonDecode(body) as Map<String, dynamic>;
-    } finally {
-      ioClient.close();
-    }
+    return _get('entry.cgi', {
+      'api': 'SYNO.Core.Package',
+      'version': '2',
+      'method': 'list',
+      'additional': '["status","startable","install_type","ctl_uninstall","description"]',
+    });
   }
 
   /// List all available packages from Synology's package server.

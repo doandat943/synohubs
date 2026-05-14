@@ -355,7 +355,7 @@ class SessionManager extends ChangeNotifier {
       packages.add(
         PackageInfo(
           id: pMap['id'] as String? ?? '',
-          name: pMap['name'] as String? ?? pMap['dname'] as String? ?? '',
+          name: pMap['dname'] as String? ?? pMap['name'] as String? ?? pMap['id'] as String? ?? '',
           version: pMap['version'] as String? ?? '',
           isRunning: isRunning,
         ),
