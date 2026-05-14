@@ -310,11 +310,11 @@ class SynologyApi {
   /// Step 1 of package install: trigger download.
   /// DSM requires JSON-quoted string values for name/url/operation.
   Future<Map<String, dynamic>> packageInstallDownload(
-      String url, int size, String md5) async {
-    // Build raw POST body with JSON-quoted values (no double encoding)
+      String id, String url, int size, String md5) async {
+    // Build raw POST body with JSON-quoted values (matches desktop Rust)
     final sid = _sid ?? '';
     final body = 'api=SYNO.Core.Package.Installation&version=1&method=install'
-        '&url="$url"&filesize=$size&type=0&blqinst=false'
+        '&name="$id"&url="$url"&filesize=$size&type=0&blqinst=false'
         '&operation="install"'
         '${md5.isNotEmpty ? '&checksum="$md5"' : ''}'
         '&_sid=$sid';
@@ -355,15 +355,27 @@ class SynologyApi {
     }
   }
 
-  /// Step 3: Install the downloaded package file.
-  Future<Map<String, dynamic>> packageInstallInstall(String packageId) async {
-    // After download completes, DSM installs with the path from step 2
-    return _get('entry.cgi', {
-      'api': 'SYNO.Core.Package.Installation',
-      'version': '1',
-      'method': 'install',
-      'id': packageId,
-    });
+  /// Step 3: Install the downloaded package file with path + volume.
+  /// [filename] comes from Step 2's `data.filename` field.
+  /// [volume] is the target volume (e.g., "/volume1").
+  Future<Map<String, dynamic>> packageInstallFinal(String filename, String volume) async {
+    final sid = _sid ?? '';
+    final body = 'api=SYNO.Core.Package.Installation&version=1&method=install'
+        '&path="$filename"&volume="$volume"&_sid=$sid';
+
+    final uri = Uri.parse('$baseUrl/entry.cgi');
+    final ioClient = _buildClient();
+    try {
+      final request = await ioClient.postUrl(uri);
+      request.headers.contentType = ContentType(
+          'application', 'x-www-form-urlencoded', charset: 'utf-8');
+      request.write(body);
+      final response = await request.close();
+      final respBody = await response.transform(utf8.decoder).join();
+      return jsonDecode(respBody) as Map<String, dynamic>;
+    } finally {
+      ioClient.close();
+    }
   }
 
   // ── Docker / Container Manager ──────────────────────────────────

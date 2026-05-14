@@ -240,23 +240,39 @@ class _PackagesScreenState extends State<PackagesScreen>
     if (api == null) return;
 
     try {
-      // Step 1: Download
-      final dlResult = await api.packageInstallDownload(pkg.link, pkg.size, pkg.md5);
-      debugPrint('[Packages] Download result: $dlResult');
+      // Step 1: Trigger download (with name + url + checksum)
+      final dlResult = await api.packageInstallDownload(pkg.id, pkg.link, pkg.size, pkg.md5);
+      debugPrint('[Packages] Step 1 download result: $dlResult');
 
-      // Step 2: Poll for download completion (up to 60s)
-      String? taskId = dlResult['data']?['taskid']?.toString();
-      if (taskId != null) {
-        for (int i = 0; i < 30; i++) {
-          await Future.delayed(const Duration(seconds: 2));
-          final status = await api.packageInstallStatus(taskId);
-          final finished = status['data']?['finished'] == true;
-          if (finished) break;
+      final taskId = dlResult['data']?['taskid']?.toString();
+      if (taskId == null || taskId.isEmpty) {
+        throw Exception('No taskid returned from download step');
+      }
+
+      // Step 2: Poll Installation.Download.check until status=non_installed (up to 120s)
+      String filename = '';
+      for (int i = 0; i < 40; i++) {
+        await Future.delayed(const Duration(seconds: 3));
+        final checkResult = await api.packageInstallStatus(taskId);
+        debugPrint('[Packages] Step 2 poll #${i + 1}: $checkResult');
+        
+        final status = checkResult['data']?['status']?.toString() ?? 'unknown';
+        if (status == 'non_installed') {
+          // Download completed — extract filename
+          filename = checkResult['data']?['filename']?.toString() ?? '';
+          debugPrint('[Packages] Step 2 download complete: filename=$filename');
+          break;
         }
       }
 
-      // Step 3: Install
-      await api.packageInstallInstall(pkg.id);
+      if (filename.isEmpty) {
+        throw Exception('Download timed out or failed: no filename returned');
+      }
+
+      // Step 3: Install with path + volume (default /volume1)
+      final installResult = await api.packageInstallFinal(filename, '/volume1');
+      debugPrint('[Packages] Step 3 install result: $installResult');
+
       await Future.delayed(const Duration(milliseconds: 2000));
       await _fetchInstalled();
       await _fetchServer();
