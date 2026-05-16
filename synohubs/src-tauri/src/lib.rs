@@ -519,6 +519,241 @@ mod synology {
             self.get("entry.cgi", params).await
         }
 
+        // ── Compound Request Helper ──────────────────────────
+
+        /// Send a compound GET request via SYNO.Entry.Request.
+        /// Returns the raw JSON response (caller extracts data.result[]).
+        async fn compound_get(&self, items: &[Value]) -> Result<Value, String> {
+            let compound_json = serde_json::to_string(items)
+                .map_err(|e| format!("JSON encode: {}", e))?;
+
+            let mut params = HashMap::new();
+            params.insert("api".to_string(), "SYNO.Entry.Request".to_string());
+            params.insert("version".to_string(), "1".to_string());
+            params.insert("method".to_string(), "request".to_string());
+            params.insert("stop_when_error".to_string(), "false".to_string());
+            params.insert("compound".to_string(), compound_json);
+
+            self.get("entry.cgi", params).await
+        }
+
+        // ── User Permission APIs ─────────────────────────────
+
+        /// Get share permissions for a specific user via compound request.
+        pub async fn share_permissions_by_user(&self, name: &str) -> Result<Value, String> {
+            let item = serde_json::json!({
+                "api": "SYNO.Core.Share.Permission",
+                "version": 1,
+                "method": "list_by_user",
+                "name": name,
+                "user_group_type": "local_user"
+            });
+            let resp = self.compound_get(&[item]).await?;
+            // Extract first result
+            if let Some(result) = resp["data"]["result"].as_array() {
+                if let Some(first) = result.first() {
+                    if first["success"].as_bool() == Some(true) {
+                        return Ok(serde_json::json!({
+                            "success": true,
+                            "data": first["data"]
+                        }));
+                    }
+                }
+            }
+            Ok(serde_json::json!({ "success": false }))
+        }
+
+        /// Set share permission for a user on a specific folder.
+        /// perm: "rw" | "ro" | "deny" | "none"
+        pub async fn share_permission_set(
+            &self,
+            share_name: &str,
+            user_name: &str,
+            perm: &str,
+        ) -> Result<Value, String> {
+            let (writable, readonly, deny) = match perm {
+                "rw" => (true, false, false),
+                "ro" => (false, true, false),
+                "deny" => (false, false, true),
+                _ => (false, false, false), // "none" = inherit
+            };
+
+            let item = serde_json::json!({
+                "api": "SYNO.Core.Share.Permission",
+                "version": 1,
+                "method": "set",
+                "name": share_name,
+                "user_group_type": "local_user",
+                "permissions": [{
+                    "name": user_name,
+                    "is_writable": writable,
+                    "is_deny": deny,
+                    "is_readonly": readonly
+                }]
+            });
+            let resp = self.compound_get(&[item]).await?;
+            if let Some(results) = resp["data"]["result"].as_array() {
+                if let Some(first) = results.first() {
+                    if first["success"].as_bool() == Some(true) {
+                        return Ok(serde_json::json!({ "success": true }));
+                    }
+                }
+            }
+            Ok(serde_json::json!({ "success": false }))
+        }
+
+        /// List all shared folders (for quota display / share listing).
+        pub async fn share_list(&self) -> Result<Value, String> {
+            let mut params = HashMap::new();
+            params.insert("api".to_string(), "SYNO.Core.Share".to_string());
+            params.insert("version".to_string(), "1".to_string());
+            params.insert("method".to_string(), "list".to_string());
+            self.get("entry.cgi", params).await
+        }
+
+        /// List all apps that support privilege management.
+        pub async fn app_priv_list(&self) -> Result<Value, String> {
+            let mut params = HashMap::new();
+            params.insert("api".to_string(), "SYNO.Core.AppPriv.App".to_string());
+            params.insert("version".to_string(), "2".to_string());
+            params.insert("method".to_string(), "list".to_string());
+            self.get("entry.cgi", params).await
+        }
+
+        /// Get privilege rules for ALL apps in one compound batch.
+        pub async fn app_priv_rules_batch(&self, app_ids: &[String]) -> Result<Value, String> {
+            let items: Vec<Value> = app_ids.iter().map(|id| {
+                serde_json::json!({
+                    "api": "SYNO.Core.AppPriv.Rule",
+                    "version": 1,
+                    "method": "list",
+                    "app_id": id
+                })
+            }).collect();
+
+            let resp = self.compound_get(&items).await?;
+            // Build a map of app_id -> rules
+            let mut map = serde_json::Map::new();
+            if let Some(results) = resp["data"]["result"].as_array() {
+                for (i, result) in results.iter().enumerate() {
+                    if let Some(id) = app_ids.get(i) {
+                        if result["success"].as_bool() == Some(true) {
+                            map.insert(id.clone(), result["data"]["rules"].clone());
+                        } else {
+                            map.insert(id.clone(), serde_json::json!([]));
+                        }
+                    }
+                }
+            }
+            Ok(serde_json::json!({
+                "success": true,
+                "data": map
+            }))
+        }
+
+        /// Get user quota via DSM admin session.
+        pub async fn user_quota_dsm(&self, name: &str) -> Result<Value, String> {
+            let mut params = HashMap::new();
+            params.insert("api".to_string(), "SYNO.Core.Quota".to_string());
+            params.insert("version".to_string(), "1".to_string());
+            params.insert("method".to_string(), "get".to_string());
+            params.insert("name".to_string(), name.to_string());
+            self.get("entry.cgi", params).await
+        }
+
+        /// Set an app privilege rule for a user: allow or deny.
+        /// action: "allow" or "deny". Pass "remove" to clear the rule.
+        pub async fn app_priv_set_rule(
+            &self,
+            app_id: &str,
+            user_name: &str,
+            action: &str,
+        ) -> Result<Value, String> {
+            // Build the rule based on action
+            let rules = match action {
+                "allow" => serde_json::json!([{
+                    "app_id": app_id,
+                    "entity_name": user_name,
+                    "entity_type": "user",
+                    "allow_ip": ["all"],
+                    "deny_ip": []
+                }]),
+                "deny" => serde_json::json!([{
+                    "app_id": app_id,
+                    "entity_name": user_name,
+                    "entity_type": "user",
+                    "allow_ip": [],
+                    "deny_ip": ["all"]
+                }]),
+                _ => {
+                    // "remove" — delete the rule
+                    let item = serde_json::json!({
+                        "api": "SYNO.Core.AppPriv.Rule",
+                        "version": 1,
+                        "method": "delete",
+                        "app_id": app_id,
+                        "entity_name": user_name,
+                        "entity_type": "user"
+                    });
+                    let resp = self.compound_get(&[item]).await?;
+                    if let Some(results) = resp["data"]["result"].as_array() {
+                        if let Some(first) = results.first() {
+                            if first["success"].as_bool() == Some(true) {
+                                return Ok(serde_json::json!({ "success": true }));
+                            }
+                        }
+                    }
+                    return Ok(serde_json::json!({ "success": false }));
+                }
+            };
+
+            let item = serde_json::json!({
+                "api": "SYNO.Core.AppPriv.Rule",
+                "version": 1,
+                "method": "set",
+                "rules": rules
+            });
+            let resp = self.compound_get(&[item]).await?;
+            if let Some(results) = resp["data"]["result"].as_array() {
+                if let Some(first) = results.first() {
+                    if first["success"].as_bool() == Some(true) {
+                        return Ok(serde_json::json!({ "success": true }));
+                    }
+                }
+            }
+            Ok(serde_json::json!({ "success": false }))
+        }
+
+        /// Set user quota on a volume.
+        /// quota_mb: quota in MB (0 = unlimited).
+        pub async fn user_quota_set(
+            &self,
+            user_name: &str,
+            volume: &str,
+            quota_mb: u64,
+        ) -> Result<Value, String> {
+            let quota_bytes = if quota_mb == 0 { 0 } else { quota_mb * 1024 * 1024 };
+            let item = serde_json::json!({
+                "api": "SYNO.Core.Quota",
+                "version": 1,
+                "method": "set",
+                "name": user_name,
+                "user_quota": [{
+                    "volume": volume,
+                    "quota": quota_bytes
+                }]
+            });
+            let resp = self.compound_get(&[item]).await?;
+            if let Some(results) = resp["data"]["result"].as_array() {
+                if let Some(first) = results.first() {
+                    if first["success"].as_bool() == Some(true) {
+                        return Ok(serde_json::json!({ "success": true }));
+                    }
+                }
+            }
+            Ok(serde_json::json!({ "success": false }))
+        }
+
         // ── File Station APIs ────────────────────────────────
 
         /// List shared folders (root level)
@@ -1455,6 +1690,79 @@ async fn group_member_list(state: State<'_, AppState>, group: String) -> Result<
     let guard = state.api.lock().await;
     let api = guard.as_ref().ok_or("Not connected")?;
     api.group_member_list(&group).await
+}
+
+// ── User Permissions Commands ──────────────────────────────
+
+#[tauri::command]
+async fn share_permissions_by_user(state: State<'_, AppState>, name: String) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.share_permissions_by_user(&name).await
+}
+
+#[tauri::command]
+async fn share_permission_set(
+    state: State<'_, AppState>,
+    share_name: String,
+    user_name: String,
+    perm: String,
+) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.share_permission_set(&share_name, &user_name, &perm).await
+}
+
+#[tauri::command]
+async fn share_list(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.share_list().await
+}
+
+#[tauri::command]
+async fn app_priv_list(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.app_priv_list().await
+}
+
+#[tauri::command]
+async fn app_priv_rules_batch(state: State<'_, AppState>, app_ids: Vec<String>) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.app_priv_rules_batch(&app_ids).await
+}
+
+#[tauri::command]
+async fn user_quota_dsm(state: State<'_, AppState>, name: String) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.user_quota_dsm(&name).await
+}
+
+#[tauri::command]
+async fn app_priv_set_rule(
+    state: State<'_, AppState>,
+    app_id: String,
+    user_name: String,
+    action: String,
+) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.app_priv_set_rule(&app_id, &user_name, &action).await
+}
+
+#[tauri::command]
+async fn user_quota_set(
+    state: State<'_, AppState>,
+    user_name: String,
+    volume: String,
+    quota_mb: u64,
+) -> Result<serde_json::Value, String> {
+    let guard = state.api.lock().await;
+    let api = guard.as_ref().ok_or("Not connected")?;
+    api.user_quota_set(&user_name, &volume, quota_mb).await
 }
 
 // ── Log Center Commands ────────────────────────────────────
@@ -2511,6 +2819,14 @@ pub fn run() {
             user_set_enabled,
             group_list,
             group_member_list,
+            share_permissions_by_user,
+            share_permission_set,
+            share_list,
+            app_priv_list,
+            app_priv_rules_batch,
+            user_quota_dsm,
+            app_priv_set_rule,
+            user_quota_set,
             media_scan_folder,
             audio_scan_folder,
             media_get_thumbnail_url,

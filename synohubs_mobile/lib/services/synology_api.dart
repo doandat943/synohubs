@@ -1304,6 +1304,45 @@ class SynologyApi {
     });
   }
 
+  /// Set share permission via compound GET (bypasses DSM 7 CSRF).
+  /// [perm]: "rw" | "ro" | "deny" | "none"
+  Future<bool> setSharePermissionDsm({
+    required String shareName,
+    required String userName,
+    required String perm,
+  }) async {
+    final bool writable, readonly, deny;
+    switch (perm) {
+      case 'rw':
+        writable = true; readonly = false; deny = false;
+      case 'ro':
+        writable = false; readonly = true; deny = false;
+      case 'deny':
+        writable = false; readonly = false; deny = true;
+      default: // 'none' = inherit from group
+        writable = false; readonly = false; deny = false;
+    }
+
+    final results = await _compoundGet([
+      {
+        'api': 'SYNO.Core.Share.Permission',
+        'version': 1,
+        'method': 'set',
+        'name': shareName,
+        'user_group_type': 'local_user',
+        'permissions': [
+          {
+            'name': userName,
+            'is_writable': writable,
+            'is_deny': deny,
+            'is_readonly': readonly,
+          }
+        ],
+      },
+    ]);
+    return results.isNotEmpty && results[0]['success'] == true;
+  }
+
   // ── User Home Directory ──────────────────────────────────────────
 
   /// Get status of user home service.
@@ -1324,6 +1363,289 @@ class SynologyApi {
       'version': '1',
       'method': 'set',
       'enable': enabled ? 'true' : 'false',
+    });
+  }
+
+  // ── DSM Admin Session ───────────────────────────────────────────
+  //
+  // Some admin-only APIs (Share.Permission, AppPriv, Quota) require
+  // a session created with session=DSM + X-SYNO-TOKEN header.
+  // These are accessed via SYNO.Entry.Request compound requests.
+
+  String? _dsmSid;
+  String? _synoToken;
+
+  /// Login with DSM session type for admin APIs.
+  /// Falls back to the existing _sid if DSM login fails.
+  Future<void> ensureDsmSession(String account, String passwd) async {
+    if (_dsmSid != null && _synoToken != null) return;
+    await _ensureHostResolved();
+    final resp = await _get('entry.cgi', {
+      'api': 'SYNO.API.Auth',
+      'version': '7',
+      'method': 'login',
+      'account': account,
+      'passwd': passwd,
+      'session': 'DSM',
+      'format': 'sid',
+      'enable_syno_token': 'yes',
+    });
+    if (resp['success'] == true) {
+      _dsmSid = resp['data']?['sid'] as String?;
+      _synoToken = resp['data']?['synotoken'] as String?;
+    }
+  }
+
+  /// Clear DSM admin session (call on logout).
+  void clearDsmSession() {
+    _dsmSid = null;
+    _synoToken = null;
+  }
+
+  /// Send a compound GET request via SYNO.Entry.Request.
+  /// [items] is a list of API call descriptors (maps).
+  /// Returns the list of results.
+  Future<List<Map<String, dynamic>>> _compoundGet(
+    List<Map<String, dynamic>> items,
+  ) async {
+    final sid = _dsmSid ?? _sid;
+    if (sid == null) return [];
+
+    final compoundJson = jsonEncode(items);
+    final params = {
+      'api': 'SYNO.Entry.Request',
+      'version': '1',
+      'method': 'request',
+      'stop_when_error': 'false',
+      'compound': compoundJson,
+      '_sid': sid,
+    };
+
+    final uri = Uri.parse('$baseUrl/entry.cgi').replace(
+      queryParameters: params,
+    );
+
+    final ioClient = _buildClient();
+    try {
+      final request = await ioClient.getUrl(uri);
+      if (_synoToken != null) {
+        request.headers.set('X-SYNO-TOKEN', _synoToken!);
+      }
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      if (json['success'] == true) {
+        final resultList = json['data']?['result'] as List? ?? [];
+        return resultList.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } finally {
+      ioClient.close();
+    }
+  }
+
+  /// GET with DSM session + X-SYNO-TOKEN header.
+  Future<Map<String, dynamic>> _dsmGet(
+    String endpoint,
+    Map<String, String> params,
+  ) async {
+    final sid = _dsmSid ?? _sid;
+    if (sid != null) params['_sid'] = sid;
+
+    final uri = Uri.parse('$baseUrl/$endpoint').replace(
+      queryParameters: params,
+    );
+
+    final ioClient = _buildClient();
+    try {
+      final request = await ioClient.getUrl(uri);
+      if (_synoToken != null) {
+        request.headers.set('X-SYNO-TOKEN', _synoToken!);
+      }
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      return jsonDecode(body) as Map<String, dynamic>;
+    } finally {
+      ioClient.close();
+    }
+  }
+
+  // ── Shared Folder Permissions ───────────────────────────────────
+
+  /// List all shared folders via DSM session (names, volumes, descriptions).
+  Future<Map<String, dynamic>> listDsmSharedFolders() async {
+    return _dsmGet('entry.cgi', {
+      'api': 'SYNO.Core.Share',
+      'version': '1',
+      'method': 'list',
+    });
+  }
+
+  /// Get a user's permissions on all shared folders.
+  /// Returns share list with is_writable, is_readonly, is_deny, inherit.
+  /// Requires DSM session. Uses compound request.
+  Future<Map<String, dynamic>> getSharePermissionsByUser(String userName) async {
+    final results = await _compoundGet([
+      {
+        'api': 'SYNO.Core.Share.Permission',
+        'version': 1,
+        'method': 'list_by_user',
+        'name': userName,
+        'user_group_type': 'local_user',
+      },
+    ]);
+    if (results.isNotEmpty && results[0]['success'] == true) {
+      return {'success': true, 'data': results[0]['data']};
+    }
+    final err = results.isNotEmpty ? results[0]['error'] : null;
+    final errCode = err is Map ? err['code'] : null;
+    return {'success': false, 'error': {'code': errCode ?? -1}};
+  }
+
+  // ── Application Privileges ─────────────────────────────────────
+
+  /// List all applications that can have privileges set.
+  Future<Map<String, dynamic>> listAppPrivApps() async {
+    return _dsmGet('entry.cgi', {
+      'api': 'SYNO.Core.AppPriv.App',
+      'version': '2',
+      'method': 'list',
+    });
+  }
+
+  /// Get privilege rules for a specific application.
+  /// Returns rules with entity_name, entity_type, allow_ip, deny_ip.
+  Future<List<Map<String, dynamic>>> getAppPrivRules(String appId) async {
+    final results = await _compoundGet([
+      {
+        'api': 'SYNO.Core.AppPriv.Rule',
+        'version': 1,
+        'method': 'list',
+        'app_id': appId,
+      },
+    ]);
+    if (results.isNotEmpty && results[0]['success'] == true) {
+      final rules = results[0]['data']?['rules'] as List? ?? [];
+      return rules.cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  /// Get privilege rules for ALL apps in one compound batch.
+  /// Returns a map of appId → list of rules.
+  Future<Map<String, List<Map<String, dynamic>>>> getAllAppPrivRules(
+    List<String> appIds,
+  ) async {
+    final items = appIds
+        .map((id) => {
+              'api': 'SYNO.Core.AppPriv.Rule',
+              'version': 1,
+              'method': 'list',
+              'app_id': id,
+            })
+        .toList();
+
+    final results = await _compoundGet(items);
+    final map = <String, List<Map<String, dynamic>>>{};
+    for (var i = 0; i < results.length && i < appIds.length; i++) {
+      if (results[i]['success'] == true) {
+        final rules = results[i]['data']?['rules'] as List? ?? [];
+        map[appIds[i]] = rules.cast<Map<String, dynamic>>();
+      } else {
+        map[appIds[i]] = [];
+      }
+    }
+    return map;
+  }
+
+  /// Set app privilege rules (allow/deny).
+  Future<bool> setAppPrivRules(List<Map<String, dynamic>> rules) async {
+    final results = await _compoundGet([
+      {
+        'api': 'SYNO.Core.AppPriv.Rule',
+        'version': 1,
+        'method': 'set',
+        'rules': rules,
+      },
+    ]);
+    return results.isNotEmpty && results[0]['success'] == true;
+  }
+
+  /// Set app privilege for a single user: "allow", "deny", or "remove".
+  Future<bool> setAppPrivForUser({
+    required String appId,
+    required String userName,
+    required String action, // "allow" | "deny" | "remove"
+  }) async {
+    if (action == 'remove') {
+      final results = await _compoundGet([
+        {
+          'api': 'SYNO.Core.AppPriv.Rule',
+          'version': 1,
+          'method': 'delete',
+          'app_id': appId,
+          'entity_name': userName,
+          'entity_type': 'user',
+        },
+      ]);
+      return results.isNotEmpty && results[0]['success'] == true;
+    }
+
+    final allowIp = action == 'allow' ? ['all'] : [];
+    final denyIp = action == 'deny' ? ['all'] : [];
+    return setAppPrivRules([
+      {
+        'app_id': appId,
+        'entity_name': userName,
+        'entity_type': 'user',
+        'allow_ip': allowIp,
+        'deny_ip': denyIp,
+      }
+    ]);
+  }
+
+  // ── Storage Quota ──────────────────────────────────────────────
+
+  /// Get a user's storage quotas via DSM session.
+  Future<Map<String, dynamic>> getDsmUserQuota(String userName) async {
+    return _dsmGet('entry.cgi', {
+      'api': 'SYNO.Core.Quota',
+      'version': '1',
+      'method': 'get',
+      'name': userName,
+    });
+  }
+
+  /// Set a user's storage quotas via DSM session.
+  /// [quotas] is a list of {share_name, quota_value} maps.
+  /// Pass empty list to remove all quotas (unlimited).
+  Future<bool> setDsmUserQuota(
+    String userName,
+    List<Map<String, dynamic>> quotas,
+  ) async {
+    final results = await _compoundGet([
+      {
+        'api': 'SYNO.Core.Quota',
+        'version': 1,
+        'method': 'set',
+        'name': userName,
+        'user_quota': quotas,
+      },
+    ]);
+    return results.isNotEmpty && results[0]['success'] == true;
+  }
+
+  // ── Group Members (admin query) ────────────────────────────────
+
+  /// List members of a specific group (uses DSM session).
+  Future<Map<String, dynamic>> listGroupMembers(String groupName) async {
+    return _dsmGet('entry.cgi', {
+      'api': 'SYNO.Core.Group.Member',
+      'version': '1',
+      'method': 'list',
+      'group': groupName,
+      'offset': '0',
+      'limit': '200',
     });
   }
 }

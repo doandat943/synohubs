@@ -4,7 +4,7 @@ import {
   Users, UserPlus, UserMinus, ShieldCheck, ShieldOff,
   Search, RefreshCw, AlertCircle, Loader,
   Eye, EyeOff, X, User, Edit3, Crown, MoreHorizontal,
-  Mail, Key, Clock, Database
+  Mail, Key, Clock, Database, FolderLock, AppWindow, HardDrive, Lock, Unlock, Check
 } from 'lucide-react';
 import { useConfirmDialog } from '../../components/ConfirmDialog/ConfirmDialog';
 import { useNasStore } from '../../stores';
@@ -110,6 +110,18 @@ const UsersGroups: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  // Permissions panel
+  const [permTab, setPermTab] = useState<'perms' | 'apps' | 'quota'>('perms');
+  const [sharePerms, setSharePerms] = useState<any[]>([]);
+  const [appList, setAppList] = useState<any[]>([]);
+  const [appRules, setAppRules] = useState<Record<string, any[]>>({});
+  const [dsmQuota, setDsmQuota] = useState<any[]>([]);
+  const [loadingPerms, setLoadingPerms] = useState(false);
+  const [showPermsPanel, setShowPermsPanel] = useState(false);
+  const [savingPerm, setSavingPerm] = useState<string | null>(null);
+  const [editQuota, setEditQuota] = useState<{ volume: string; mb: string } | null>(null);
+  const [shareListData, setShareListData] = useState<any[]>([]);
 
   // Edit user modal
   const [editUser, setEditUser] = useState<SynoUser | null>(null);
@@ -219,6 +231,97 @@ const UsersGroups: React.FC = () => {
     setSelectedUser(null);
     setUserDetail(null);
     setUserQuota([]);
+    setShowPermsPanel(false);
+  };
+
+  const loadPermissions = async (userName: string) => {
+    setShowPermsPanel(true);
+    setPermTab('perms');
+    setLoadingPerms(true);
+    setSharePerms([]); setAppList([]); setAppRules({}); setDsmQuota([]); setShareListData([]);
+    try {
+      const [permRes, appRes, quotaRes, shareRes]: any[] = await Promise.all([
+        invoke('share_permissions_by_user', { name: userName }).catch(() => null),
+        invoke('app_priv_list').catch(() => null),
+        invoke('user_quota_dsm', { name: userName }).catch(() => null),
+        invoke('share_list').catch(() => null),
+      ]);
+      if (permRes?.success) setSharePerms(permRes.data?.shares || []);
+      if (shareRes?.success) setShareListData(shareRes.data?.shares || []);
+      if (appRes?.success) {
+        const apps = appRes.data?.applications || [];
+        setAppList(apps);
+        if (apps.length > 0) {
+          const ids = apps.map((a: any) => a.app_id);
+          const rulesRes: any = await invoke('app_priv_rules_batch', { appIds: ids }).catch(() => null);
+          if (rulesRes?.success) setAppRules(rulesRes.data || {});
+        }
+      }
+      if (quotaRes?.success) setDsmQuota(quotaRes.data?.user_quota || []);
+    } catch (err) {
+      console.warn('[Permissions] Load error:', err);
+    } finally {
+      setLoadingPerms(false);
+    }
+  };
+
+  const handleSetSharePerm = async (shareName: string, perm: string) => {
+    if (!userDetail) return;
+    setSavingPerm('share-' + shareName);
+    try {
+      const res: any = await invoke('share_permission_set', {
+        shareName, userName: userDetail.name, perm,
+      });
+      if (res?.success) {
+        // Reload permissions
+        const permRes: any = await invoke('share_permissions_by_user', { name: userDetail.name }).catch(() => null);
+        if (permRes?.success) setSharePerms(permRes.data?.shares || []);
+      }
+    } catch (err) {
+      console.warn('[SharePerm] Set error:', err);
+    } finally {
+      setSavingPerm(null);
+    }
+  };
+
+  const handleSetAppPriv = async (appId: string, action: string) => {
+    if (!userDetail) return;
+    setSavingPerm(appId);
+    try {
+      const res: any = await invoke('app_priv_set_rule', {
+        appId, userName: userDetail.name, action,
+      });
+      if (res?.success) {
+        // Reload rules for this app
+        const ids = appList.map((a: any) => a.app_id);
+        const rulesRes: any = await invoke('app_priv_rules_batch', { appIds: ids }).catch(() => null);
+        if (rulesRes?.success) setAppRules(rulesRes.data || {});
+      }
+    } catch (err) {
+      console.warn('[AppPriv] Set error:', err);
+    } finally {
+      setSavingPerm(null);
+    }
+  };
+
+  const handleSetQuota = async (volume: string, quotaMb: number) => {
+    if (!userDetail) return;
+    setSavingPerm('quota-' + volume);
+    try {
+      const res: any = await invoke('user_quota_set', {
+        userName: userDetail.name, volume, quotaMb: quotaMb,
+      });
+      if (res?.success) {
+        // Reload quota
+        const quotaRes: any = await invoke('user_quota_dsm', { name: userDetail.name }).catch(() => null);
+        if (quotaRes?.success) setDsmQuota(quotaRes.data?.user_quota || []);
+      }
+    } catch (err) {
+      console.warn('[Quota] Set error:', err);
+    } finally {
+      setSavingPerm(null);
+      setEditQuota(null);
+    }
   };
 
   // ── Actions ──
@@ -493,6 +596,171 @@ const UsersGroups: React.FC = () => {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Permissions Button */}
+                    {isCurrentAdmin && (
+                      <div className="ug__profile-section">
+                        <button className="ug__profile-action-btn ug__profile-action-btn--perm" onClick={() => loadPermissions(userDetail.name)}>
+                          <FolderLock size={12} /> View Permissions
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Permissions Panel (inline) */}
+                    {showPermsPanel && (
+                      <div className="ug__profile-section">
+                        <div className="ug__perm-tabs">
+                          <button className={`ug__perm-tab ${permTab === 'perms' ? 'ug__perm-tab--active' : ''}`} onClick={() => setPermTab('perms')}>
+                            <FolderLock size={11} /> Folders
+                          </button>
+                          <button className={`ug__perm-tab ${permTab === 'apps' ? 'ug__perm-tab--active' : ''}`} onClick={() => setPermTab('apps')}>
+                            <AppWindow size={11} /> Apps
+                          </button>
+                          <button className={`ug__perm-tab ${permTab === 'quota' ? 'ug__perm-tab--active' : ''}`} onClick={() => setPermTab('quota')}>
+                            <HardDrive size={11} /> Quota
+                          </button>
+                        </div>
+
+                        {loadingPerms ? (
+                          <div className="ug__panel-loading"><Loader size={14} className="animate-spin" /> Loading...</div>
+                        ) : permTab === 'perms' ? (
+                          <div className="ug__perm-list">
+                            {sharePerms.length === 0 ? <div className="ug__perm-empty">No shared folders</div> : sharePerms.map((s: any) => {
+                              const isDeny = s.is_deny === true;
+                              const isRW = s.is_writable === true;
+                              const isRO = s.is_readonly === true;
+                              const current = isDeny ? 'deny' : isRW ? 'rw' : isRO ? 'ro' : 'none';
+                              const isSaving = savingPerm === 'share-' + s.name;
+                              return (
+                                <div key={s.name} className="ug__perm-row ug__perm-row--folder">
+                                  <span className="ug__perm-folder">{s.name}</span>
+                                  <div className="ug__perm-actions">
+                                    {isSaving ? <Loader size={12} className="animate-spin" /> : (
+                                      <>
+                                        <button
+                                          className={`ug__perm-action-btn ug__perm-action-btn--sm ${current === 'rw' ? 'ug__perm-action-btn--active-allow' : ''}`}
+                                          onClick={() => handleSetSharePerm(s.name, current === 'rw' ? 'none' : 'rw')}
+                                          title="Read/Write"
+                                        >R/W</button>
+                                        <button
+                                          className={`ug__perm-action-btn ug__perm-action-btn--sm ${current === 'ro' ? 'ug__perm-action-btn--active-warn' : ''}`}
+                                          onClick={() => handleSetSharePerm(s.name, current === 'ro' ? 'none' : 'ro')}
+                                          title="Read Only"
+                                        >RO</button>
+                                        <button
+                                          className={`ug__perm-action-btn ug__perm-action-btn--sm ${current === 'deny' ? 'ug__perm-action-btn--active-deny' : ''}`}
+                                          onClick={() => handleSetSharePerm(s.name, current === 'deny' ? 'none' : 'deny')}
+                                          title="No Access"
+                                        ><Lock size={9} /></button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : permTab === 'apps' ? (
+                          <div className="ug__perm-list">
+                            {appList.length === 0 ? <div className="ug__perm-empty">No applications</div> : appList.map((app: any) => {
+                              const rules = appRules[app.app_id] || [];
+                              const userRule = rules.find((r: any) => r.entity_name === userDetail.name && r.entity_type === 'user');
+                              const everyoneRule = rules.find((r: any) => r.entity_type === 'everyone');
+                              let currentAction = 'none';
+                              if (userRule) {
+                                const deny = (userRule.deny_ip || []).length > 0;
+                                const allow = (userRule.allow_ip || []).length > 0;
+                                if (deny) currentAction = 'deny';
+                                else if (allow) currentAction = 'allow';
+                              } else if (everyoneRule) {
+                                currentAction = 'group';
+                              }
+                              const isSaving = savingPerm === app.app_id;
+                              return (
+                                <div key={app.app_id} className="ug__perm-row ug__perm-row--app">
+                                  <span className="ug__perm-folder">{app.name}</span>
+                                  <div className="ug__perm-actions">
+                                    {isSaving ? <Loader size={12} className="animate-spin" /> : (
+                                      <>
+                                        <button
+                                          className={`ug__perm-action-btn ${currentAction === 'allow' ? 'ug__perm-action-btn--active-allow' : ''}`}
+                                          onClick={() => handleSetAppPriv(app.app_id, currentAction === 'allow' ? 'remove' : 'allow')}
+                                          title="Allow"
+                                        ><Unlock size={10} /></button>
+                                        <button
+                                          className={`ug__perm-action-btn ${currentAction === 'deny' ? 'ug__perm-action-btn--active-deny' : ''}`}
+                                          onClick={() => handleSetAppPriv(app.app_id, currentAction === 'deny' ? 'remove' : 'deny')}
+                                          title="Deny"
+                                        ><Lock size={10} /></button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="ug__perm-list">
+                            {(() => {
+                              // Build quota rows: merge DSM quota data with share list
+                              const quotaMap = new Map(dsmQuota.map((q: any) => [q.volume || q.share_name, q]));
+                              const volumes = shareListData.length > 0
+                                ? [...new Set(shareListData.map((s: any) => s.vol_path))].filter(Boolean) as string[]
+                                : [...quotaMap.keys()];
+                              
+                              if (volumes.length === 0) {
+                                return (
+                                  <div className="ug__perm-empty">
+                                    {adminNames.has(userDetail.name) ? '\u221e Unlimited (Admin)' : 'No volumes found'}
+                                  </div>
+                                );
+                              }
+                              
+                              return volumes.map((vol: string) => {
+                                const q = quotaMap.get(vol);
+                                const used = q?.used_size || 0;
+                                const quota = q?.quota_value || 0;
+                                const pct = quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
+                                const isEditing = editQuota?.volume === vol;
+                                const isSaving = savingPerm === 'quota-' + vol;
+                                return (
+                                  <div key={vol} className="ug__quota-row">
+                                    <div className="ug__quota-header">
+                                      <span className="ug__quota-share">{vol}</span>
+                                      {isSaving ? <Loader size={10} className="animate-spin" /> : (
+                                        <button className="ug__quota-edit-btn" onClick={() => {
+                                          if (isEditing) { setEditQuota(null); }
+                                          else { setEditQuota({ volume: vol, mb: String(quota > 0 ? Math.round(quota / 1024 / 1024) : 0) }); }
+                                        }} title="Edit quota">
+                                          <Edit3 size={9} />
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="ug__quota-bar-wrap"><div className="ug__quota-bar" style={{ width: `${pct}%` }} /></div>
+                                    <span className="ug__quota-text">{formatBytes(used)} / {quota > 0 ? formatBytes(quota) : 'Unlimited'}</span>
+                                    {isEditing && (
+                                      <div className="ug__quota-edit">
+                                        <input
+                                          type="number"
+                                          value={editQuota!.mb}
+                                          onChange={e => setEditQuota({ volume: editQuota!.volume, mb: e.target.value })}
+                                          placeholder="MB (0=unlimited)"
+                                          className="ug__quota-input"
+                                          autoFocus
+                                        />
+                                        <span className="ug__quota-unit">MB</span>
+                                        <button className="ug__quota-save" onClick={() => handleSetQuota(vol, parseInt(editQuota!.mb) || 0)}>
+                                          <Check size={10} /> Set
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                        )}
                       </div>
                     )}
 

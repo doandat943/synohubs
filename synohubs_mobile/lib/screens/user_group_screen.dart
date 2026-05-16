@@ -4,6 +4,7 @@ import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import '../services/session_manager.dart';
 import '../l10n/app_localizations.dart';
+import 'user_permissions_screen.dart';
 
 class UserGroupScreen extends StatefulWidget {
   const UserGroupScreen({super.key});
@@ -682,6 +683,29 @@ class _UserGroupScreenState extends State<UserGroupScreen>
             ),
 
             const SizedBox(height: 20),
+
+            // Permissions button (full-width)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: SizedBox(
+                width: double.infinity,
+                child: _sheetActionButton(
+                  Icons.admin_panel_settings,
+                  l.sharePermissions,
+                  AppColors.primary,
+                  () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UserPermissionsScreen(userName: name),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
 
             // Action buttons
             Padding(
