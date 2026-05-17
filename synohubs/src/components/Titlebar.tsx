@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ArrowUp, ArrowDown, Bell, Settings } from 'lucide-react';
-import { useNasStore } from '../stores';
+import { ArrowUp, ArrowDown, Bell, SlidersHorizontal, X, ExternalLink, Info } from 'lucide-react';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { useNasStore, useAuthStore } from '../stores';
+import { APP_VERSION } from '../utils/version';
 
 /**
  * Titlebar — Custom macOS-style traffic light buttons
@@ -9,8 +11,11 @@ import { useNasStore } from '../stores';
  */
 const Titlebar: React.FC = () => {
   const { activeNas } = useNasStore();
+  const { user } = useAuthStore();
   const [isMaximized, setIsMaximized] = useState(false);
   const [hovering, setHovering] = useState(false);
+  const [showPrefsPopover, setShowPrefsPopover] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   const appWindow = getCurrentWindow();
 
@@ -26,6 +31,21 @@ const Titlebar: React.FC = () => {
     }
   };
   const handleClose = () => appWindow.close();
+
+  const openExternal = (url: string) => {
+    openUrl(url).catch(() => window.open(url, '_blank'));
+  };
+
+  // Close popover on click outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setShowPrefsPopover(false);
+      }
+    };
+    if (showPrefsPopover) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showPrefsPopover]);
 
   return (
     <div className="titlebar" data-tauri-drag-region>
@@ -97,9 +117,59 @@ const Titlebar: React.FC = () => {
         <button className="titlebar__action" title="Notifications">
           <Bell size={14} />
         </button>
-        <button className="titlebar__action" title="Settings">
-          <Settings size={14} />
-        </button>
+        <div style={{ position: 'relative' }} ref={popoverRef}>
+          <button
+            className={`titlebar__action ${showPrefsPopover ? 'active' : ''}`}
+            title="App Preferences"
+            onClick={() => setShowPrefsPopover(!showPrefsPopover)}
+          >
+            <SlidersHorizontal size={14} />
+          </button>
+
+          {/* App Preferences Popover */}
+          {showPrefsPopover && (
+            <div className="nas-account-popover">
+              <div className="nas-account-popover__header">
+                <span>App Preferences</span>
+                <button className="nas-account-popover__close" onClick={() => setShowPrefsPopover(false)}>
+                  <X size={12} />
+                </button>
+              </div>
+              <div className="nas-account-popover__body">
+                <div className="nas-account-popover__row">
+                  <Info size={13} />
+                  <span className="nas-account-popover__label">Version</span>
+                  <span className="nas-account-popover__value" style={{ color: 'var(--color-accent)' }}>{APP_VERSION}</span>
+                </div>
+                <div className="nas-account-popover__row">
+                  <span style={{ width: 13 }} />
+                  <span className="nas-account-popover__label">Account</span>
+                  <span className="nas-account-popover__value nas-account-popover__value--dim">{user?.email || '—'}</span>
+                </div>
+                <div className="nas-account-popover__row">
+                  <span style={{ width: 13 }} />
+                  <span className="nas-account-popover__label">Tier</span>
+                  <span className={`nas-account-popover__badge ${user?.tier === 'vip' ? 'admin' : 'user'}`}>
+                    {user?.tier === 'vip' ? '⭐ VIP' : 'Free'}
+                  </span>
+                </div>
+                <div className="nas-account-popover__row">
+                  <span style={{ width: 13 }} />
+                  <span className="nas-account-popover__label">Platform</span>
+                  <span className="nas-account-popover__value">Desktop</span>
+                </div>
+              </div>
+              <div className="nas-account-popover__links">
+                <button className="nas-account-popover__link" onClick={() => openExternal('https://synohubs.com')}>
+                  <ExternalLink size={11} /> synohubs.com
+                </button>
+                <button className="nas-account-popover__link" onClick={() => openExternal('https://github.com/duconmang/synohubs')}>
+                  <ExternalLink size={11} /> GitHub
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

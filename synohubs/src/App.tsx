@@ -11,6 +11,7 @@ import Docker from './screens/Docker/Docker';
 import ResourceMonitor from './screens/ResourceMonitor/ResourceMonitor';
 import UsersGroups from './screens/UsersGroups/UsersGroups';
 import LogCenter from './screens/LogCenter/LogCenter';
+import NasAccount from './screens/NasAccount/NasAccount';
 import PlaceholderScreen from './screens/PlaceholderScreen';
 
 /**
@@ -71,7 +72,7 @@ function App() {
         <Route path="packages" element={<Packages />} />
         <Route path="docker" element={<Docker />} />
         <Route path="logs" element={<LogCenter />} />
-        <Route path="settings" element={<PlaceholderScreen title="Settings" icon="Settings" />} />
+        <Route path="settings" element={<NasAccount />} />
       </Route>
 
       {/* Catch-all */}

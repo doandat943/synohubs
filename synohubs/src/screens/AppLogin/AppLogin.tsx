@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { SynoHubsLogo, GoogleLogo } from '../../components/Logo';
 import { useAuthStore } from '../../stores';
+import { APP_VERSION } from '../../utils/version';
 import './AppLogin.css';
 
 /** Floating macOS-style traffic lights for login screen */
@@ -129,7 +130,7 @@ const AppLogin: React.FC = () => {
         </p>
       </div>
 
-      <span className="app-login__version">v0.1.0</span>
+      <span className="app-login__version">{APP_VERSION}</span>
     </div>
   );
 };

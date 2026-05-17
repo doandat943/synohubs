@@ -2,9 +2,10 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, Image, Film, Users, Package,
-  Settings, Activity, Lock, Container, ScrollText
+  CircleUserRound, Activity, Lock, Container, ScrollText
 } from 'lucide-react';
 import { useAuthStore, useNasStore } from '../../stores';
+import { APP_VERSION } from '../../utils/version';
 import './Sidebar.css';
 
 interface NavItem {
@@ -32,7 +33,7 @@ const adminNav: NavItem[] = [
 ];
 
 const bottomNav: NavItem[] = [
-  { icon: Settings, label: 'Settings', path: '/app/settings', colorClass: 'icon--settings' },
+  { icon: CircleUserRound, label: 'NAS Account', path: '/app/settings', colorClass: 'icon--settings' },
 ];
 
 /**
@@ -106,7 +107,7 @@ const NavSidebar: React.FC = () => {
       <div className="nav-sidebar__bottom">
         {bottomNav.map(renderNavItem)}
 
-        <div className="nav-sidebar__version">v0.1.0</div>
+        <div className="nav-sidebar__version">{APP_VERSION}</div>
       </div>
     </nav>
   );

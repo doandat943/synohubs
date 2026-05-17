@@ -15,6 +15,7 @@ mod synology {
         pub use_https: bool,
         pub sid: Option<String>,
         pub syno_token: Option<String>,
+        pub session_name: String,
         client: Client,
     }
 
@@ -32,6 +33,7 @@ mod synology {
                 use_https,
                 sid: None,
                 syno_token: None,
+                session_name: "Core".to_string(),
                 client,
             }
         }
@@ -113,15 +115,32 @@ mod synology {
             otp_code: Option<&str>,
             device_id: Option<&str>,
         ) -> Result<Value, String> {
+            self.login_with_session(account, passwd, otp_code, device_id, "Core", "7").await
+        }
+
+        /// Login with a specific session type (for fallback logic).
+        pub async fn login_with_session(
+            &mut self,
+            account: &str,
+            passwd: &str,
+            otp_code: Option<&str>,
+            device_id: Option<&str>,
+            session: &str,
+            version: &str,
+        ) -> Result<Value, String> {
             let mut params = HashMap::new();
             params.insert("api".to_string(), "SYNO.API.Auth".to_string());
-            params.insert("version".to_string(), "7".to_string());
+            params.insert("version".to_string(), version.to_string());
             params.insert("method".to_string(), "login".to_string());
             params.insert("account".to_string(), account.to_string());
             params.insert("passwd".to_string(), passwd.to_string());
-            params.insert("session".to_string(), "Core".to_string());
+            params.insert("session".to_string(), session.to_string());
             params.insert("format".to_string(), "sid".to_string());
-            params.insert("enable_syno_token".to_string(), "yes".to_string());
+
+            // Only request syno_token for admin sessions (Core/DSM)
+            if session == "Core" || session == "DSM" {
+                params.insert("enable_syno_token".to_string(), "yes".to_string());
+            }
 
             // If we have a trusted device_id, send it to skip 2FA
             // IMPORTANT: device_name must always be sent alongside device_id
@@ -147,15 +166,16 @@ mod synology {
             if resp["success"].as_bool() == Some(true) {
                 self.sid = resp["data"]["sid"].as_str().map(String::from);
                 self.syno_token = resp["data"]["synotoken"].as_str().map(String::from);
+                self.session_name = session.to_string();
                 // Synology may return the device token as "did" or "device_id"
                 let did = resp["data"]["did"].as_str()
                     .or_else(|| resp["data"]["device_id"].as_str())
                     .unwrap_or("none");
                 let has_token = self.syno_token.is_some();
-                eprintln!("[SynoHubs] Login success, did={}, syno_token={}", did, has_token);
+                eprintln!("[SynoHubs] Login success (session={}), did={}, syno_token={}", session, did, has_token);
             } else {
                 let code = resp["error"]["code"].as_i64().unwrap_or(0);
-                eprintln!("[SynoHubs] Login failed, code={}, error={}", code, resp["error"]);
+                eprintln!("[SynoHubs] Login failed (session={}), code={}, error={}", session, code, resp["error"]);
             }
 
             Ok(resp)
@@ -170,7 +190,7 @@ mod synology {
             params.insert("api".to_string(), "SYNO.API.Auth".to_string());
             params.insert("version".to_string(), "6".to_string());
             params.insert("method".to_string(), "logout".to_string());
-            params.insert("session".to_string(), "Core".to_string());
+            params.insert("session".to_string(), self.session_name.clone());
             let _ = self.get("auth.cgi", params).await;
             self.sid = None;
             Ok(())
@@ -1449,7 +1469,7 @@ async fn nas_login(
     let address = request.address.trim().to_string();
 
     // Check if QuickConnect
-    let (host, port, use_https) = if quickconnect::is_quickconnect(&address) {
+    let (host, port, mut use_https) = if quickconnect::is_quickconnect(&address) {
         let qc_id = quickconnect::extract_id(&address);
         match quickconnect::resolve(&qc_id).await {
             Ok(result) => (result.host, result.port, result.use_https),
@@ -1490,6 +1510,7 @@ async fn nas_login(
 
     // If HTTPS failed with network error and user didn't specify protocol, retry with HTTP
     if login_result.is_err() && use_https && !user_specified_protocol {
+        use_https = false;
         api = synology::SynologyApi::new(&host, port, false);
         login_result = api
             .login(
@@ -1501,11 +1522,42 @@ async fn nas_login(
             .await;
     }
 
+    // Track whether user logged in via admin session or non-admin fallback
+    let mut used_fallback = false;
+
+    // If Core session returned 402 (Permission denied), fallback to FileStation session
+    // This allows non-admin users to login with basic permissions
+    if let Ok(ref resp) = login_result {
+        if resp["success"].as_bool() != Some(true)
+            && resp["error"]["code"].as_i64() == Some(402)
+        {
+            eprintln!("[SynoHubs] Core session denied (402), trying FileStation fallback...");
+            api = synology::SynologyApi::new(&host, port, use_https);
+            let fallback = api
+                .login_with_session(
+                    &request.username,
+                    &request.password,
+                    request.otp_code.as_deref(),
+                    request.device_id.as_deref(),
+                    "FileStation",
+                    "3",
+                )
+                .await;
+            if let Ok(ref fb_resp) = fallback {
+                if fb_resp["success"].as_bool() == Some(true) {
+                    used_fallback = true;
+                    login_result = fallback;
+                }
+                // If FileStation also fails, keep original 402 error
+            }
+        }
+    }
+
     match login_result {
         Ok(resp) => {
             if resp["success"].as_bool() == Some(true) {
-                // Check admin
-                let is_admin = api.check_admin().await;
+                // Admin check: if we used FileStation fallback, user is definitely non-admin
+                let is_admin = if used_fallback { false } else { api.check_admin().await };
 
                 // Get DSM info
                 let mut model = None;

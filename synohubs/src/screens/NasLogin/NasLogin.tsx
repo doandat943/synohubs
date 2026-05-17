@@ -10,6 +10,7 @@ import { SynoHubsLogo } from '../../components/Logo';
 import { useAuthStore, useNasStore, type NasConnection } from '../../stores';
 import { getNasModelImage, getNasSeriesColor } from '../../utils/nasModels';
 import { useConfirmDialog } from '../../components/ConfirmDialog/ConfirmDialog';
+import { APP_VERSION } from '../../utils/version';
 import './NasLogin.css';
 
 /**
@@ -220,7 +221,7 @@ const NasLogin: React.FC = () => {
                   </div>
                   <span className="nas-login__user-name">{user.name}</span>
                 </div>
-                <div className="nas-login__user-version">v0.1.0</div>
+                <div className="nas-login__user-version">{APP_VERSION}</div>
               </>
             )}
           </div>
