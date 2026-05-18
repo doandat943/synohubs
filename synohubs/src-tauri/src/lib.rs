@@ -1439,15 +1439,19 @@ struct LoginResponse {
 /// Parse user input to extract host, port, protocol
 fn parse_address(input: &str) -> (String, u16, bool) {
     let trimmed = input.trim();
+    let lower = trimmed.to_lowercase();
 
-    // Check for protocol
-    let (scheme, rest) = if trimmed.starts_with("https://") {
+    // Check for protocol (case-insensitive)
+    let (scheme, rest) = if lower.starts_with("https://") {
         (true, &trimmed[8..])
-    } else if trimmed.starts_with("http://") {
+    } else if lower.starts_with("http://") {
         (false, &trimmed[7..])
     } else {
         (true, trimmed) // default HTTPS
     };
+
+    // Strip trailing slashes
+    let rest = rest.trim_end_matches('/');
 
     // Split host:port
     let parts: Vec<&str> = rest.split(':').collect();
